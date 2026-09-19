@@ -1,0 +1,117 @@
+import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
+import { requireDb, csrfProtection, requireAuth, requireTeacher, requireMasterAdmin, verifyClassOwnership, verifySectionOwnership } from './middleware.ts';
+import { isDatabaseConnected } from './db.ts';
+
+import * as authCtrl from './controllers/authController.ts';
+import * as classCtrl from './controllers/classController.ts';
+import * as studentCtrl from './controllers/studentController.ts';
+import * as assessCtrl from './controllers/assessmentController.ts';
+import * as marksCtrl from './controllers/marksController.ts';
+import * as attendCtrl from './controllers/attendanceController.ts';
+import * as adminCtrl from './controllers/adminController.ts';
+
+const api = Router();
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  validate: false,
+  message: {
+    success: false,
+    error: 'RATE_LIMIT_EXCEEDED',
+    message: 'Too many authentication attempts. Please try again in 15 minutes.',
+  },
+});
+
+// Enforce JWT_SECRET configuration check: if missing or shorter than 32 characters, return HTTP 503 {error:'CONFIG_ERROR', message: 'Server is not configured correctly. Contact the administrator.'}
+api.use((req, res, next) => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    return res.status(503).json({ error: 'CONFIG_ERROR', message: 'Server is not configured correctly. Contact the administrator.' });
+  }
+  next();
+});
+
+// 1. Health & Connection Status (public, does not require DB to respond)
+api.get('/health', (req, res) => {
+  const connected = isDatabaseConnected();
+  return res.json({
+    status: 'ok',
+    database: {
+      connected,
+    },
+  });
+});
+
+// 2. Auth Endpoints
+api.get('/auth/csrf', authCtrl.getCsrfToken);
+api.get('/auth/admin-setup-status', requireDb, authCtrl.getAdminSetupStatus);
+api.post('/auth/register', authLimiter, requireDb, authCtrl.registerTeacher);
+api.post('/auth/register-admin', authLimiter, requireDb, authCtrl.registerMasterAdmin);
+api.post('/auth/login', authLimiter, requireDb, authCtrl.login);
+
+api.use(csrfProtection);
+
+api.post('/auth/logout', authCtrl.logout);
+api.get('/auth/me', requireDb, requireAuth, authCtrl.getMe);
+api.post('/auth/change-password', authLimiter, requireDb, requireAuth, authCtrl.changePassword);
+api.post('/auth/delete-account', requireDb, requireAuth, authCtrl.deleteAccount);
+
+// From here down: All endpoints require active DB connection and authentication
+api.use(requireDb);
+api.use(requireAuth);
+
+// 3. Classes
+api.get('/classes', classCtrl.listClasses);
+api.post('/classes', requireTeacher, classCtrl.createClass);
+api.delete('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.deleteClass); // Sensitive: requires password
+api.patch('/classes/:classId/attendance', requireTeacher, verifyClassOwnership, classCtrl.toggleAttendance);
+
+// 4. Sections
+api.get('/classes/:classId/sections', verifyClassOwnership, classCtrl.listSections);
+api.post('/classes/:classId/sections', requireTeacher, verifyClassOwnership, classCtrl.addSection); // Sensitive: requires password
+api.delete('/classes/:classId/sections/:sectionId', requireTeacher, verifyClassOwnership, classCtrl.deleteSection); // Sensitive: requires password
+
+// 5. Assessments (Class-scoped)
+api.get('/classes/:classId/examinations', verifyClassOwnership, assessCtrl.listExaminations);
+api.post('/classes/:classId/examinations', requireTeacher, verifyClassOwnership, assessCtrl.createExamination);
+
+api.get('/classes/:classId/assignments', verifyClassOwnership, assessCtrl.listAssignments);
+api.post('/classes/:classId/assignments', requireTeacher, verifyClassOwnership, assessCtrl.createAssignment);
+
+api.patch('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.updateAssessment);
+api.delete('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.deleteAssessment);
+
+// 6. Students
+api.get('/sections/:sectionId/students', verifySectionOwnership, studentCtrl.listStudents);
+api.post('/sections/:sectionId/students', requireTeacher, verifySectionOwnership, studentCtrl.createStudent); // Enforces 100 limit
+api.put('/students/:studentId', requireTeacher, studentCtrl.updateStudent);
+api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent); // Sensitive: requires password
+api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
+
+// 7. Marks & Dynamic Excel
+api.get('/sections/:sectionId/marks', verifySectionOwnership, marksCtrl.getSectionMarksMatrix);
+api.post('/sections/:sectionId/marks/single', requireTeacher, verifySectionOwnership, marksCtrl.updateSingleMark);
+api.get('/sections/:sectionId/excel/sample', verifySectionOwnership, marksCtrl.exportSampleExcel);
+api.post('/sections/:sectionId/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksExcel); // Strictly Marks Only
+
+// 8. Attendance
+api.get('/sections/:sectionId/attendance', verifySectionOwnership, attendCtrl.getAttendanceMetaAndHistory);
+api.post('/sections/:sectionId/attendance', requireTeacher, verifySectionOwnership, attendCtrl.submitDailyAttendance);
+api.get('/attendance/:attendanceId', attendCtrl.getHistoricalDay);
+api.put('/attendance/:attendanceId', requireTeacher, attendCtrl.updateHistoricalAttendance);
+
+// 9. Master Admin
+api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
+api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
+api.patch('/admin/teachers/:teacherId/status', requireMasterAdmin, adminCtrl.updateTeacherStatus);
+api.patch('/admin/teachers/:teacherId/lock-deletion', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
+api.patch('/admin/teachers/:teacherId/deletion-lock', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
+api.patch('/admin/teachers/:teacherId/password', requireMasterAdmin, adminCtrl.editTeacherPassword);
+api.post('/admin/teachers/:teacherId/reset-password', requireMasterAdmin, adminCtrl.resetTeacherPassword);
+api.delete('/admin/teachers/:teacherId', requireMasterAdmin, adminCtrl.deleteTeacher);
+
+export default api;
