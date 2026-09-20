@@ -36,6 +36,12 @@ export async function listAllTeachers(req: Request, res: Response) {
     const formatted = teachers.map((t) => ({
       id: t._id.toString(),
       username: t.username,
+      fullName: t.fullName || '',
+      phoneNumber: t.phoneNumber || '',
+      college: t.college || '',
+      dob: t.dob || '',
+      customFields: t.customFields || {},
+      plainPassword: t.plainPassword || '',
       role: t.role,
       status: t.status || 'active',
       isDeletionLocked: !!t.isDeletionLocked,
@@ -221,6 +227,7 @@ export async function resetTeacherPassword(req: Request, res: Response) {
       {
         $set: {
           passwordHash,
+          plainPassword: passwordToHash,
           mustChangePassword: true,
           tokenVersion: nextTokenVersion,
         },
@@ -237,12 +244,14 @@ export async function resetTeacherPassword(req: Request, res: Response) {
         success: true,
         message: 'Teacher password reset successfully.',
         temporaryPassword: passwordToHash,
+        plainPassword: passwordToHash,
       });
     }
 
     return res.json({
       success: true,
-      message: 'Teacher password reset successfully.',
+      message: 'Teacher password updated successfully.',
+      plainPassword: passwordToHash,
     });
   } catch (err) {
     console.error(err);
@@ -251,6 +260,81 @@ export async function resetTeacherPassword(req: Request, res: Response) {
 }
 
 export const editTeacherPassword = resetTeacherPassword;
+
+export async function updateTeacherProfileByAdmin(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  const { fullName, phoneNumber, username, college, dob, customFields } = req.body;
+
+  if (!teacherId || !ObjectId.isValid(teacherId)) {
+    return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const teacher = await db.collection('users').findOne({ _id: new ObjectId(teacherId), role: 'teacher' });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found.' });
+    }
+
+    const updateFields: any = {};
+    if (fullName !== undefined) {
+      if (typeof fullName !== 'string' || fullName.trim() === '') {
+        return res.status(400).json({ success: false, message: 'Full Name cannot be empty.' });
+      }
+      updateFields.fullName = fullName.trim();
+    }
+
+    if (phoneNumber !== undefined) {
+      if (typeof phoneNumber !== 'string' || phoneNumber.trim() === '') {
+        return res.status(400).json({ success: false, message: 'Phone Number cannot be empty.' });
+      }
+      updateFields.phoneNumber = phoneNumber.trim();
+    }
+
+    if (username !== undefined) {
+      const cleanU = username.trim().toLowerCase();
+      if (cleanU.length < 3) {
+        return res.status(400).json({ success: false, message: 'Username must be at least 3 characters.' });
+      }
+      if (cleanU.includes('admin')) {
+        return res.status(400).json({ success: false, message: "Username cannot contain 'admin'." });
+      }
+      if (cleanU !== teacher.username) {
+        const existing = await db.collection('users').findOne({ username: cleanU });
+        if (existing) {
+          return res.status(409).json({ success: false, message: 'Username is already in use.' });
+        }
+        updateFields.username = cleanU;
+      }
+    }
+
+    if (college !== undefined) {
+      updateFields.college = typeof college === 'string' ? college.trim() : '';
+    }
+
+    if (dob !== undefined) {
+      const cleanDob = typeof dob === 'string' ? dob.trim() : '';
+      if (cleanDob !== '' && !/^\d{4}-\d{2}-\d{2}$/.test(cleanDob)) {
+        return res.status(400).json({ success: false, message: 'Date of Birth must be in YYYY-MM-DD format.' });
+      }
+      updateFields.dob = cleanDob;
+    }
+
+    if (customFields !== undefined && typeof customFields === 'object' && customFields !== null) {
+      updateFields.customFields = customFields;
+    }
+
+    await db.collection('users').updateOne(
+      { _id: new ObjectId(teacherId) },
+      { $set: updateFields }
+    );
+
+    return res.json({ success: true, message: 'Teacher profile updated successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
 
 export async function inspectTeacherData(req: Request, res: Response) {
   const { teacherId } = req.params;
@@ -262,8 +346,7 @@ export async function inspectTeacherData(req: Request, res: Response) {
   try {
     const db = getDatabase();
     const teacher = await db.collection('users').findOne(
-      { _id: new ObjectId(teacherId), role: 'teacher' },
-      { projection: { passwordHash: 0, adminPasswordRecord: 0 } }
+      { _id: new ObjectId(teacherId), role: 'teacher' }
     );
 
     if (!teacher) {
@@ -344,6 +427,12 @@ export async function inspectTeacherData(req: Request, res: Response) {
         teacher: {
           id: teacher._id.toString(),
           username: teacher.username,
+          fullName: teacher.fullName || '',
+          phoneNumber: teacher.phoneNumber || '',
+          college: teacher.college || '',
+          dob: teacher.dob || '',
+          customFields: teacher.customFields || {},
+          plainPassword: teacher.plainPassword || '',
           status: teacher.status || 'active',
           isDeletionLocked: !!teacher.isDeletionLocked,
           createdAt: teacher.createdAt,

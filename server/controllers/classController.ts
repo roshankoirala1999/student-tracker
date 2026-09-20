@@ -10,13 +10,14 @@ export async function listClasses(req: Request, res: Response) {
 
     const classes = await db.collection('classes')
       .find({ teacherId: targetTeacherId })
-      .sort({ createdAt: 1 })
+      .sort({ order: 1, createdAt: 1 })
       .toArray();
 
-    const formatted = classes.map((c) => ({
+    const formatted = classes.map((c, index) => ({
       id: c._id.toString(),
       teacherId: c.teacherId,
       name: c.name,
+      order: c.order !== undefined ? c.order : index,
       attendanceEnabled: !!c.attendanceEnabled,
       createdAt: c.createdAt,
     }));
@@ -49,10 +50,14 @@ export async function createClass(req: Request, res: Response) {
       return res.status(409).json({ success: false, message: `You already have a class named "${cleanName}".` });
     }
 
+    const count = await db.collection('classes').countDocuments({ teacherId });
+    const order = count + 1;
     const now = new Date().toISOString();
+
     const insertResult = await db.collection('classes').insertOne({
       teacherId,
       name: cleanName,
+      order,
       attendanceEnabled: !!attendanceEnabled,
       createdAt: now,
     });
@@ -63,12 +68,106 @@ export async function createClass(req: Request, res: Response) {
         id: insertResult.insertedId.toString(),
         teacherId,
         name: cleanName,
+        order,
         attendanceEnabled: !!attendanceEnabled,
         createdAt: now,
       },
       message: `Class "${cleanName}" created successfully.`,
     });
   } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+export async function reorderClasses(req: Request, res: Response) {
+  const { classIds, orders } = req.body;
+  const teacherId = req.user!.userId;
+
+  try {
+    const db = getDatabase();
+
+    if (Array.isArray(classIds)) {
+      const updates = classIds.map((id: string, index: number) => {
+        if (!ObjectId.isValid(id)) return null;
+        return db.collection('classes').updateOne(
+          { _id: new ObjectId(id), teacherId },
+          { $set: { order: index + 1 } }
+        );
+      });
+      await Promise.all(updates.filter(Boolean));
+    } else if (Array.isArray(orders)) {
+      const updates = orders.map((item: { classId?: string; id?: string; order: number }) => {
+        const id = item.classId || item.id;
+        if (!id || !ObjectId.isValid(id)) return null;
+        return db.collection('classes').updateOne(
+          { _id: new ObjectId(id), teacherId },
+          { $set: { order: item.order } }
+        );
+      });
+      await Promise.all(updates.filter(Boolean));
+    } else {
+      return res.status(400).json({ success: false, message: 'classIds array or orders array is required.' });
+    }
+
+    return res.json({ success: true, message: 'Classes reordered successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+export async function renameClass(req: Request, res: Response) {
+  const { classId } = req.params;
+  const { name } = req.body;
+  const teacherId = req.user!.userId;
+
+  if (!name || typeof name !== 'string' || name.trim() === '') {
+    return res.status(400).json({ success: false, message: 'Class name cannot be empty.' });
+  }
+
+  if (!classId || !ObjectId.isValid(classId)) {
+    return res.status(400).json({ success: false, message: 'Invalid Class ID.' });
+  }
+
+  const cleanName = name.trim();
+
+  try {
+    const db = getDatabase();
+    const existing = await db.collection('classes').findOne({
+      _id: { $ne: new ObjectId(classId) },
+      teacherId,
+      name: { $regex: new RegExp(`^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+    });
+
+    if (existing) {
+      return res.status(409).json({ success: false, message: `You already have another class named "${cleanName}".` });
+    }
+
+    const result = await db.collection('classes').updateOne(
+      { _id: new ObjectId(classId), teacherId },
+      { $set: { name: cleanName } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Class not found or unauthorized.' });
+    }
+
+    const updated = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
+
+    return res.json({
+      success: true,
+      message: 'Class renamed successfully.',
+      data: {
+        id: updated!._id.toString(),
+        teacherId: updated!.teacherId,
+        name: updated!.name,
+        order: updated!.order ?? 0,
+        attendanceEnabled: !!updated!.attendanceEnabled,
+        createdAt: updated!.createdAt,
+      },
+    });
+  } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }

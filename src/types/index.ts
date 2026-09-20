@@ -1,9 +1,23 @@
 export type UserRole = 'teacher' | 'administrator' | 'master_admin';
 export type UserStatus = 'active' | 'suspended';
 
+export interface ProfileQuestion {
+  id: string;
+  questionLabel?: string;
+  questionText?: string;
+  required?: boolean;
+  createdAt: string;
+}
+
 export interface UserProfile {
   id: string;
   username: string;
+  fullName: string;
+  phoneNumber: string;
+  college?: string;
+  dob?: string;
+  customFields?: Record<string, string>;
+  plainPassword?: string;
   role: UserRole;
   status: UserStatus;
   isDeletionLocked?: boolean;
@@ -15,6 +29,12 @@ export interface UserProfile {
 export interface TeacherItem {
   id: string;
   username: string;
+  fullName?: string;
+  phoneNumber?: string;
+  college?: string;
+  dob?: string;
+  customFields?: Record<string, string>;
+  plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
   isDeletionLocked?: boolean;
@@ -28,6 +48,7 @@ export interface ClassItem {
   id: string;
   teacherId: string;
   name: string;
+  order: number;
   attendanceEnabled: boolean;
   createdAt: string;
 }

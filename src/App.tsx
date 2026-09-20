@@ -137,6 +137,7 @@ const MainApp: React.FC = () => {
             mobileOpen={mobileSidebarOpen}
             setMobileOpen={setMobileSidebarOpen}
             onOpenCreateClass={() => setCreateClassModalOpen(true)}
+            onRefreshClasses={loadClasses}
           />
 
           {/* Main Content Area */}
@@ -190,6 +191,10 @@ const MainApp: React.FC = () => {
                   setSelectedSectionId(null);
                   setSelectedClassId(null);
                   await loadClasses();
+                }}
+                onBack={() => {
+                  setSelectedSectionId(null);
+                  setSelectedClassId(null);
                 }}
               />
             ) : (

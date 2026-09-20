@@ -221,7 +221,7 @@ export const SectionDetailView: React.FC<Props> = ({
             title="Open interactive marks sheet"
           >
             <Table className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Marks Matrix</span>
+            <span>Marks</span>
           </button>
 
           {/* Attendance (only shown if class attendance is enabled) */}

@@ -7,19 +7,32 @@ import {
   KeyRound,
   Search,
   Eye,
+  EyeOff,
   BookOpen,
   Users,
   X,
   Lock,
   Unlock,
   Trash2,
+  Edit,
+  Plus,
+  ArrowUp,
+  ArrowDown,
+  HelpCircle,
 } from 'lucide-react';
 import { apiRequest } from '../../api/client.ts';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
+import { ProfileQuestion } from '../../types/index.ts';
 
 interface TeacherItem {
   id: string;
   username: string;
+  fullName?: string;
+  phoneNumber?: string;
+  college?: string;
+  dob?: string;
+  customFields?: Record<string, string>;
+  plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
   isDeletionLocked?: boolean;
@@ -63,6 +76,10 @@ interface InspectedData {
   teacher: {
     id: string;
     username: string;
+    fullName?: string;
+    phoneNumber?: string;
+    college?: string;
+    dob?: string;
     status: string;
     isDeletionLocked?: boolean;
     createdAt: string;
@@ -78,10 +95,30 @@ export const MasterAdminView: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
+  // Password visibility map (by teacher id)
+  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
+
   // Password edit modal state
   const [passwordModalTeacher, setPasswordModalTeacher] = useState<TeacherItem | null>(null);
   const [newPassword, setNewPassword] = useState('');
   const [passwordLoading, setPasswordLoading] = useState(false);
+
+  // Edit Teacher Profile modal state (for administrator)
+  const [editTeacher, setEditTeacher] = useState<TeacherItem | null>(null);
+  const [editFullName, setEditFullName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editCollege, setEditCollege] = useState('');
+  const [editDob, setEditDob] = useState('');
+  const [editCustomFields, setEditCustomFields] = useState<Record<string, string>>({});
+  const [editPasswordInput, setEditPasswordInput] = useState('');
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Profile Questions state
+  const [questions, setQuestions] = useState<ProfileQuestion[]>([]);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [newQuestionText, setNewQuestionText] = useState('');
+  const [newQuestionRequired, setNewQuestionRequired] = useState(false);
+  const [questionSubmitting, setQuestionSubmitting] = useState(false);
 
   // Delete teacher modal state
   const [teacherToDelete, setTeacherToDelete] = useState<TeacherItem | null>(null);
@@ -103,9 +140,26 @@ export const MasterAdminView: React.FC = () => {
     }
   };
 
+  const loadQuestions = async () => {
+    setQuestionsLoading(true);
+    const res = await apiRequest<ProfileQuestion[]>('/api/profile-questions');
+    setQuestionsLoading(false);
+    if (res.success && res.data) {
+      setQuestions(res.data);
+    }
+  };
+
   useEffect(() => {
     loadTeachers();
+    loadQuestions();
   }, []);
+
+  const togglePasswordVisibility = (teacherId: string) => {
+    setRevealedPasswords((prev) => ({
+      ...prev,
+      [teacherId]: !prev[teacherId],
+    }));
+  };
 
   const handleToggleStatus = async (teacher: TeacherItem) => {
     const nextStatus = teacher.status === 'active' ? 'suspended' : 'active';
@@ -155,6 +209,110 @@ export const MasterAdminView: React.FC = () => {
     }
   };
 
+  const handleOpenEditTeacher = (teacher: TeacherItem) => {
+    setEditTeacher(teacher);
+    setEditFullName(teacher.fullName || '');
+    setEditPhone(teacher.phoneNumber || '');
+    setEditCollege(teacher.college || '');
+    setEditDob(teacher.dob || '');
+    setEditCustomFields(teacher.customFields || {});
+    setEditPasswordInput('');
+  };
+
+  const handleSaveTeacherProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editTeacher) return;
+
+    if (editDob.trim() && !/^\d{4}-\d{2}-\d{2}$/.test(editDob.trim())) {
+      setError('Date of birth must be in strictly YYYY-MM-DD format (e.g. 2056-01-01).');
+      return;
+    }
+
+    setEditLoading(true);
+    const body: Record<string, unknown> = {
+      fullName: editFullName.trim(),
+      phoneNumber: editPhone.trim(),
+      college: editCollege.trim(),
+      dob: editDob.trim(),
+      customFields: editCustomFields,
+    };
+    if (editPasswordInput.trim()) {
+      body.newPassword = editPasswordInput.trim();
+    }
+
+    const res = await apiRequest(`/api/admin/teachers/${editTeacher.id}/profile`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+    setEditLoading(false);
+
+    if (res.success) {
+      setSuccessMsg(`Profile for teacher "${editTeacher.username}" updated.`);
+      setEditTeacher(null);
+      await loadTeachers();
+    } else {
+      setError(res.message || 'Failed to update teacher profile.');
+    }
+  };
+
+  // Questions Management
+  const handleAddQuestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newQuestionText.trim()) return;
+
+    setQuestionSubmitting(true);
+    const res = await apiRequest('/api/profile-questions', {
+      method: 'POST',
+      body: JSON.stringify({
+        questionText: newQuestionText.trim(),
+        fieldType: 'text',
+        required: newQuestionRequired,
+      }),
+    });
+    setQuestionSubmitting(false);
+
+    if (res.success) {
+      setNewQuestionText('');
+      setNewQuestionRequired(false);
+      setSuccessMsg('Institutional question added.');
+      await loadQuestions();
+    } else {
+      setError(res.message || 'Failed to add question.');
+    }
+  };
+
+  const handleDeleteQuestion = async (id: string) => {
+    const res = await apiRequest(`/api/profile-questions/${id}`, {
+      method: 'DELETE',
+    });
+    if (res.success) {
+      setSuccessMsg('Institutional question deleted.');
+      await loadQuestions();
+    } else {
+      setError(res.message || 'Failed to delete question.');
+    }
+  };
+
+  const handleReorderQuestions = async (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= questions.length) return;
+
+    const copy = [...questions];
+    const [moved] = copy.splice(index, 1);
+    copy.splice(targetIndex, 0, moved);
+
+    const questionIds = copy.map((q) => q.id);
+    const res = await apiRequest('/api/profile-questions/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ questionIds }),
+    });
+    if (res.success) {
+      setQuestions(copy);
+    } else {
+      setError(res.message || 'Failed to reorder questions.');
+    }
+  };
+
   const handleConfirmDeleteTeacher = async (password: string) => {
     if (!teacherToDelete) return;
     const res = await apiRequest(`/api/admin/teachers/${teacherToDelete.id}`, {
@@ -182,9 +340,14 @@ export const MasterAdminView: React.FC = () => {
     }
   };
 
-  const filtered = teachers.filter((t) =>
-    t.username.toLowerCase().includes(search.toLowerCase().trim())
-  );
+  const filtered = teachers.filter((t) => {
+    const term = search.toLowerCase().trim();
+    return (
+      t.username.toLowerCase().includes(term) ||
+      (t.fullName && t.fullName.toLowerCase().includes(term)) ||
+      (t.phoneNumber && t.phoneNumber.toLowerCase().includes(term))
+    );
+  });
 
   return (
     <div className="space-y-6">
@@ -245,8 +408,8 @@ export const MasterAdminView: React.FC = () => {
           <table className="w-full text-left text-xs">
             <thead className="bg-[#F4F6FA] dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 uppercase text-[10px] tracking-wider">
               <tr>
-                <th className="py-3 px-4">Username</th>
-                <th className="py-3 px-4">Role</th>
+                <th className="py-3 px-4">Teacher</th>
+                <th className="py-3 px-4">Password</th>
                 <th className="py-3 px-4 text-center">Classes</th>
                 <th className="py-3 px-4 text-center">Students</th>
                 <th className="py-3 px-4 text-center">Status</th>
@@ -268,106 +431,252 @@ export const MasterAdminView: React.FC = () => {
                   </td>
                 </tr>
               ) : (
-                filtered.map((t) => (
-                  <tr key={t.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-slate-100">{t.username}</td>
-                    <td className="py-3.5 px-4 capitalize text-slate-600 dark:text-slate-400">{t.role}</td>
-                    <td className="py-3.5 px-4 text-center font-semibold text-slate-800 dark:text-slate-200">{t.classCount}</td>
-                    <td className="py-3.5 px-4 text-center font-semibold text-slate-800 dark:text-slate-200">{t.studentCount}</td>
-                    <td className="py-3.5 px-4 text-center">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
-                          t.status === 'active'
-                            ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                            : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                        }`}
-                      >
-                        {t.status.toUpperCase()}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-center">
-                      <button
-                        type="button"
-                        onClick={() => handleToggleDeletionLock(t)}
-                        className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                          t.isDeletionLocked
-                            ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-100'
-                            : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
-                        }`}
-                        title={t.isDeletionLocked ? 'Deletion Locked (Click to Unlock)' : 'Unlocked (Click to Lock)'}
-                      >
-                        {t.isDeletionLocked ? (
-                          <Lock className="w-3.5 h-3.5" />
-                        ) : (
-                          <Unlock className="w-3.5 h-3.5" />
-                        )}
-                      </button>
-                    </td>
-                    <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                      {/* Inspect Data Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleOpenInspect(t)}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#2B547E]/10 dark:bg-blue-500/10 hover:bg-[#2B547E]/20 dark:hover:bg-blue-500/20 text-[#2B547E] dark:text-blue-400 cursor-pointer transition-colors"
-                        title="Inspect classes, sections, and students"
-                      >
-                        <span className="flex items-center gap-1 inline-flex">
-                          <Eye className="w-3.5 h-3.5" /> Inspect
+                filtered.map((t) => {
+                  const isRevealed = !!revealedPasswords[t.id];
+                  const displayPass = t.plainPassword || '••••••••';
+
+                  return (
+                    <tr key={t.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
+                      <td className="py-3.5 px-4">
+                        <div className="font-bold text-slate-900 dark:text-slate-100">
+                          {t.fullName ? t.fullName : t.username}
+                        </div>
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                          <span className="font-mono">@{t.username}</span>
+                          {t.phoneNumber && <span>• {t.phoneNumber}</span>}
+                          {t.college && <span>• {t.college}</span>}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-xs text-slate-700 dark:text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span>{isRevealed ? displayPass : '••••••••'}</span>
+                          <button
+                            type="button"
+                            onClick={() => togglePasswordVisibility(t.id)}
+                            title={isRevealed ? 'Hide Password' : 'Show Password'}
+                            className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
+                          >
+                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-semibold text-slate-800 dark:text-slate-200">{t.classCount}</td>
+                      <td className="py-3.5 px-4 text-center font-semibold text-slate-800 dark:text-slate-200">{t.studentCount}</td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold ${
+                            t.status === 'active'
+                              ? 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                              : 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
+                          }`}
+                        >
+                          {t.status.toUpperCase()}
                         </span>
-                      </button>
-
-                      {/* Suspend / Reactivate */}
-                      <button
-                        type="button"
-                        onClick={() => handleToggleStatus(t)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
-                          t.status === 'active'
-                            ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300'
-                            : 'bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300'
-                        }`}
-                      >
-                        {t.status === 'active' ? (
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleDeletionLock(t)}
+                          className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                            t.isDeletionLocked
+                              ? 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-100'
+                              : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+                          }`}
+                          title={t.isDeletionLocked ? 'Deletion Locked (Click to Unlock)' : 'Unlocked (Click to Lock)'}
+                        >
+                          {t.isDeletionLocked ? (
+                            <Lock className="w-3.5 h-3.5" />
+                          ) : (
+                            <Unlock className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </td>
+                      <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                        {/* Inspect Data Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenInspect(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#2B547E]/10 dark:bg-blue-500/10 hover:bg-[#2B547E]/20 dark:hover:bg-blue-500/20 text-[#2B547E] dark:text-blue-400 cursor-pointer transition-colors"
+                          title="Inspect classes, sections, and students"
+                        >
                           <span className="flex items-center gap-1 inline-flex">
-                            <Ban className="w-3.5 h-3.5" /> Suspend
+                            <Eye className="w-3.5 h-3.5" /> Inspect
                           </span>
-                        ) : (
+                        </button>
+
+                        {/* Edit Teacher Profile */}
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditTeacher(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                          title="Edit Teacher Profile & Details"
+                        >
                           <span className="flex items-center gap-1 inline-flex">
-                            <CheckCircle className="w-3.5 h-3.5" /> Reactivate
+                            <Edit className="w-3.5 h-3.5" /> Edit
                           </span>
-                        )}
-                      </button>
+                        </button>
 
-                      {/* Reset / Change Password */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPasswordModalTeacher(t);
-                          setNewPassword('');
-                        }}
-                        className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
-                        title="Change Teacher Password"
-                      >
-                        <span className="flex items-center gap-1 inline-flex">
-                          <KeyRound className="w-3.5 h-3.5" /> Password
-                        </span>
-                      </button>
+                        {/* Suspend / Reactivate */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleStatus(t)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                            t.status === 'active'
+                              ? 'bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-300'
+                              : 'bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300'
+                          }`}
+                        >
+                          {t.status === 'active' ? (
+                            <span className="flex items-center gap-1 inline-flex">
+                              <Ban className="w-3.5 h-3.5" /> Suspend
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 inline-flex">
+                              <CheckCircle className="w-3.5 h-3.5" /> Reactivate
+                            </span>
+                          )}
+                        </button>
 
-                      {/* Delete Teacher */}
-                      <button
-                        type="button"
-                        disabled={t.isDeletionLocked}
-                        onClick={() => setTeacherToDelete(t)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer transition-colors"
-                        title={t.isDeletionLocked ? 'Cannot delete: Deletion Locked' : 'Cascade Delete Teacher'}
-                      >
-                        <Trash2 className="w-4 h-4 inline" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                        {/* Reset / Change Password */}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPasswordModalTeacher(t);
+                            setNewPassword('');
+                          }}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer transition-colors"
+                          title="Change Teacher Password"
+                        >
+                          <span className="flex items-center gap-1 inline-flex">
+                            <KeyRound className="w-3.5 h-3.5" /> Password
+                          </span>
+                        </button>
+
+                        {/* Delete Teacher */}
+                        <button
+                          type="button"
+                          disabled={t.isDeletionLocked}
+                          onClick={() => setTeacherToDelete(t)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-30 disabled:hover:text-slate-400 cursor-pointer transition-colors"
+                          title={t.isDeletionLocked ? 'Cannot delete: Deletion Locked' : 'Cascade Delete Teacher'}
+                        >
+                          <Trash2 className="w-4 h-4 inline" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* Institutional Profile Fields Management Section */}
+      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs space-y-4 transition-colors">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <HelpCircle className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
+              <span>Institutional Profile Fields</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Define custom questionnaire fields presented to all teachers in their profile.
+            </p>
+          </div>
+        </div>
+
+        {/* Add Question Form */}
+        <form onSubmit={handleAddQuestion} className="flex flex-col sm:flex-row items-end gap-3 bg-slate-50 dark:bg-[#0F172A] p-4 rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="flex-1 w-full">
+            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+              New Question / Field Title
+            </label>
+            <input
+              type="text"
+              required
+              value={newQuestionText}
+              onChange={(e) => setNewQuestionText(e.target.value)}
+              placeholder="e.g. Master's Degree Specialization, Blood Group..."
+              className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1A2232] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300 pb-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={newQuestionRequired}
+              onChange={(e) => setNewQuestionRequired(e.target.checked)}
+              className="rounded text-[#2B547E]"
+            />
+            <span>Mandatory (Required)</span>
+          </label>
+
+          <button
+            type="submit"
+            disabled={questionSubmitting || !newQuestionText.trim()}
+            className="px-4 py-2 bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold disabled:opacity-50 cursor-pointer transition-colors shadow-xs shrink-0 flex items-center gap-1.5"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Add Question</span>
+          </button>
+        </form>
+
+        {/* Existing Questions List */}
+        <div className="space-y-2">
+          {questionsLoading ? (
+            <p className="text-xs text-slate-400 py-4 text-center">Loading institutional questions...</p>
+          ) : questions.length === 0 ? (
+            <p className="text-xs text-slate-400 py-6 text-center italic">No custom profile questions created yet.</p>
+          ) : (
+            questions.map((q, idx) => (
+              <div
+                key={q.id}
+                className="flex items-center justify-between p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-[#141C2B] text-xs"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-slate-400 w-5 text-center">{idx + 1}.</span>
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">{q.questionText}</span>
+                    {q.required && (
+                      <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300">
+                        Required
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={idx === 0}
+                    onClick={() => handleReorderQuestions(idx, 'up')}
+                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 cursor-pointer"
+                    title="Move Up"
+                  >
+                    <ArrowUp className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={idx === questions.length - 1}
+                    onClick={() => handleReorderQuestions(idx, 'down')}
+                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-30 cursor-pointer"
+                    title="Move Down"
+                  >
+                    <ArrowDown className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteQuestion(q.id)}
+                    className="p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 cursor-pointer ml-1"
+                    title="Delete Question"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -518,6 +827,144 @@ export const MasterAdminView: React.FC = () => {
                 Close Inspection
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Edit Teacher Profile Modal */}
+      {editTeacher && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl max-w-lg w-full border border-slate-200/80 dark:border-slate-700/80 p-6 max-h-[90vh] flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Edit className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
+                  Edit Teacher Profile: @{editTeacher.username}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditTeacher(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTeacherProfile} className="space-y-4 pt-4 overflow-y-auto pr-1">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editFullName}
+                  onChange={(e) => setEditFullName(e.target.value)}
+                  placeholder="e.g. Ramesh Adhikari"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Phone Number
+                </label>
+                <input
+                  type="tel"
+                  required
+                  value={editPhone}
+                  onChange={(e) => setEditPhone(e.target.value)}
+                  placeholder="e.g. 9841234567"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    College / Institution
+                  </label>
+                  <input
+                    type="text"
+                    value={editCollege}
+                    onChange={(e) => setEditCollege(e.target.value)}
+                    placeholder="e.g. Tribhuvan University"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                    DOB (YYYY-MM-DD)
+                  </label>
+                  <input
+                    type="text"
+                    value={editDob}
+                    onChange={(e) => setEditDob(e.target.value)}
+                    placeholder="2056-01-01"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                  />
+                </div>
+              </div>
+
+              {/* Dynamic Institutional Fields */}
+              {questions.length > 0 && (
+                <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3">
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                    Institutional Questionnaire Fields
+                  </div>
+                  {questions.map((q) => (
+                    <div key={q.id}>
+                      <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                        {q.questionText} {q.required && <span className="text-rose-500">*</span>}
+                      </label>
+                      <input
+                        type="text"
+                        value={editCustomFields[q.id] || ''}
+                        onChange={(e) =>
+                          setEditCustomFields((prev) => ({
+                            ...prev,
+                            [q.id]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Optional Password Override */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Change Password (Leave blank to keep unchanged)
+                </label>
+                <input
+                  type="text"
+                  value={editPasswordInput}
+                  onChange={(e) => setEditPasswordInput(e.target.value)}
+                  placeholder="New password (optional)"
+                  className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditTeacher(null)}
+                  className="px-4 py-2 text-xs font-medium text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editLoading}
+                  className="px-4 py-2 bg-[#2B547E] hover:bg-[#355C7D] text-white text-xs font-semibold rounded-xl cursor-pointer disabled:opacity-50 transition-colors shadow-2xs"
+                >
+                  {editLoading ? 'Saving...' : 'Save Profile Changes'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

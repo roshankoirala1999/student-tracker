@@ -20,7 +20,15 @@ export async function cascadeDeleteTeacherData(db: any, teacherId: string) {
 }
 
 export async function registerTeacher(req: Request, res: Response) {
-  const { username, password } = req.body;
+  const { fullName, phoneNumber, username, password } = req.body;
+
+  if (!fullName || typeof fullName !== 'string' || fullName.trim().length === 0) {
+    return res.status(400).json({ success: false, message: 'Full Name is required.' });
+  }
+
+  if (!phoneNumber || typeof phoneNumber !== 'string' || phoneNumber.trim().length === 0) {
+    return res.status(400).json({ success: false, message: 'Phone Number is required.' });
+  }
 
   if (!username || typeof username !== 'string' || username.trim().length < 3) {
     return res.status(400).json({ success: false, message: 'Username must be at least 3 characters long.' });
@@ -62,6 +70,12 @@ export async function registerTeacher(req: Request, res: Response) {
 
     const insertResult = await db.collection('users').insertOne({
       username: cleanUsername,
+      fullName: fullName.trim(),
+      phoneNumber: phoneNumber.trim(),
+      college: '',
+      dob: '',
+      customFields: {},
+      plainPassword: password,
       passwordHash,
       role: 'teacher' as UserRole,
       status: 'active' as UserStatus,
@@ -89,6 +103,12 @@ export async function registerTeacher(req: Request, res: Response) {
       data: {
         id: userId,
         username: cleanUsername,
+        fullName: fullName.trim(),
+        phoneNumber: phoneNumber.trim(),
+        college: '',
+        dob: '',
+        customFields: {},
+        plainPassword: password,
         role: 'teacher',
         status: 'active',
         isDeletionLocked: false,
@@ -157,6 +177,12 @@ export async function login(req: Request, res: Response) {
       data: {
         id: userId,
         username: user.username,
+        fullName: user.fullName || '',
+        phoneNumber: user.phoneNumber || '',
+        college: user.college || '',
+        dob: user.dob || '',
+        customFields: user.customFields || {},
+        plainPassword: user.plainPassword || '',
         role: user.role,
         status: user.status || 'active',
         isDeletionLocked: !!user.isDeletionLocked,
@@ -219,6 +245,7 @@ export async function changePassword(req: Request, res: Response) {
       {
         $set: {
           passwordHash: newHash,
+          plainPassword: newPassword,
           mustChangePassword: false,
           tokenVersion: newTokenVersion,
         },
@@ -243,6 +270,12 @@ export async function changePassword(req: Request, res: Response) {
       data: {
         id: user._id.toString(),
         username: user.username,
+        fullName: user.fullName || '',
+        phoneNumber: user.phoneNumber || '',
+        college: user.college || '',
+        dob: user.dob || '',
+        customFields: user.customFields || {},
+        plainPassword: newPassword,
         role: user.role,
         status: user.status || 'active',
         isDeletionLocked: !!user.isDeletionLocked,
@@ -290,6 +323,12 @@ export async function getMe(req: Request, res: Response) {
       data: {
         id: req.user.userId,
         username: req.user.username,
+        fullName: user?.fullName || '',
+        phoneNumber: user?.phoneNumber || '',
+        college: user?.college || '',
+        dob: user?.dob || '',
+        customFields: user?.customFields || {},
+        plainPassword: user?.plainPassword || '',
         role: req.user.role,
         status: user ? user.status || 'active' : req.user.status,
         isDeletionLocked: user ? !!user.isDeletionLocked : false,
@@ -302,6 +341,183 @@ export async function getMe(req: Request, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+export async function updateTeacherProfile(req: Request, res: Response) {
+  if (!req.user) {
+    return res.status(401).json({ success: false, message: 'Not authenticated.' });
+  }
+
+  const { fullName, phoneNumber, username, college, dob, password } = req.body;
+
+  // Strict boundary: Rejects any teacher attempt to mutate fullName, phoneNumber, or username
+  if (fullName !== undefined || phoneNumber !== undefined || username !== undefined) {
+    return res.status(403).json({
+      success: false,
+      message: 'Name, Phone Number, and Username are editable by Admin only.',
+    });
+  }
+
+  const updateFields: any = {};
+
+  if (college !== undefined) {
+    updateFields.college = typeof college === 'string' ? college.trim() : '';
+  }
+
+  if (dob !== undefined) {
+    const cleanDob = typeof dob === 'string' ? dob.trim() : '';
+    if (cleanDob !== '') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDob)) {
+        return res.status(400).json({
+          success: false,
+          message: 'Date of Birth must be in YYYY-MM-DD format (e.g., 2056-01-01).',
+        });
+      }
+    }
+    updateFields.dob = cleanDob;
+  }
+
+  let newPassHash: string | undefined;
+  let cleanNewPass: string | undefined;
+
+  if (password && typeof password === 'string' && password.trim() !== '') {
+    cleanNewPass = password.trim();
+    if (cleanNewPass.length < 6) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long.' });
+    }
+    const lower = cleanNewPass.toLowerCase();
+    if (lower.includes('password') || lower.includes('admin')) {
+      return res.status(400).json({
+        success: false,
+        message: "Password cannot contain reserved words such as 'password' or 'admin'.",
+      });
+    }
+    newPassHash = await hashPassword(cleanNewPass);
+    updateFields.passwordHash = newPassHash;
+    updateFields.plainPassword = cleanNewPass;
+    updateFields.mustChangePassword = false;
+  }
+
+  try {
+    const db = getDatabase();
+    const user = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found.' });
+    }
+
+    if (newPassHash) {
+      const nextTokenVer = (user.tokenVersion || 0) + 1;
+      updateFields.tokenVersion = nextTokenVer;
+    }
+
+    await db.collection('users').updateOne(
+      { _id: user._id },
+      { $set: updateFields }
+    );
+
+    const updatedUser = await db.collection('users').findOne({ _id: user._id });
+
+    return res.json({
+      success: true,
+      message: 'Profile updated successfully.',
+      data: {
+        id: updatedUser!._id.toString(),
+        username: updatedUser!.username,
+        fullName: updatedUser!.fullName || '',
+        phoneNumber: updatedUser!.phoneNumber || '',
+        college: updatedUser!.college || '',
+        dob: updatedUser!.dob || '',
+        customFields: updatedUser!.customFields || {},
+        plainPassword: updatedUser!.plainPassword || '',
+        role: updatedUser!.role,
+        status: updatedUser!.status || 'active',
+        isDeletionLocked: !!updatedUser!.isDeletionLocked,
+        mustChangePassword: !!updatedUser!.mustChangePassword,
+        tokenVersion: updatedUser!.tokenVersion ?? 0,
+        createdAt: updatedUser!.createdAt,
+      },
+    });
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+export async function listProfileQuestions(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const questions = await db.collection('profile_questions')
+      .find({})
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    const formatted = questions.map((q) => ({
+      id: q._id.toString(),
+      questionLabel: q.questionLabel || q.questionText || '',
+      questionText: q.questionText || q.questionLabel || '',
+      required: Boolean(q.required),
+      createdAt: q.createdAt,
+    }));
+
+    return res.json({ success: true, data: formatted });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to load profile questions.' });
+  }
+}
+
+export async function createProfileQuestion(req: Request, res: Response) {
+  const rawLabel = req.body.questionLabel || req.body.questionText;
+  const isRequired = Boolean(req.body.required);
+
+  if (!rawLabel || typeof rawLabel !== 'string' || rawLabel.trim() === '') {
+    return res.status(400).json({ success: false, message: 'Question label is required.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const cleanLabel = rawLabel.trim();
+    const now = new Date().toISOString();
+
+    const result = await db.collection('profile_questions').insertOne({
+      questionLabel: cleanLabel,
+      questionText: cleanLabel,
+      required: isRequired,
+      createdAt: now,
+    });
+
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: result.insertedId.toString(),
+        questionLabel: cleanLabel,
+        questionText: cleanLabel,
+        required: isRequired,
+        createdAt: now,
+      },
+      message: 'Profile question created successfully.',
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to create profile question.' });
+  }
+}
+
+export async function deleteProfileQuestion(req: Request, res: Response) {
+  const { id } = req.params;
+
+  if (!id || !ObjectId.isValid(id)) {
+    return res.status(400).json({ success: false, message: 'Invalid Question ID.' });
+  }
+
+  try {
+    const db = getDatabase();
+    await db.collection('profile_questions').deleteOne({ _id: new ObjectId(id) });
+    return res.json({ success: true, message: 'Profile question deleted successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to delete profile question.' });
   }
 }
 

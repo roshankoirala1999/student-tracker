@@ -220,7 +220,7 @@ export const MarksTableModal: React.FC<Props> = ({
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-[#2B547E] dark:bg-blue-400" />
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
-                Marks Matrix — {className} ({sectionName})
+                Marks — {className} ({sectionName})
               </h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
@@ -264,7 +264,7 @@ export const MarksTableModal: React.FC<Props> = ({
         {/* Table Container with Sticky Columns */}
         <div className="p-4 sm:p-6 overflow-auto flex-1 bg-white dark:bg-[#1E293B]">
           {loading ? (
-            <div className="py-16 text-center text-xs text-slate-500 dark:text-slate-400">Loading marks matrix...</div>
+            <div className="py-16 text-center text-xs text-slate-500 dark:text-slate-400">Loading marks...</div>
           ) : !data || (data.assignments.length === 0 && data.examinations.length === 0) ? (
             <div className="text-center py-16 text-xs text-slate-500 dark:text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30">
               No assignments or examinations configured for this class yet. Go back to the Class Overview to add coursework and exams first.

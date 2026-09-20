@@ -10,9 +10,10 @@ export const AuthPage: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
   const [tab, setTab] = useState<'login' | 'register' | 'admin-login' | 'admin-setup'>('login');
 
+  const [fullName, setFullName] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [bootstrapKey, setBootstrapKey] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -21,9 +22,10 @@ export const AuthPage: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const resetForm = () => {
+    setFullName('');
+    setPhoneNumber('');
     setUsername('');
     setPassword('');
-    setConfirmPassword('');
     setBootstrapKey('');
     setError(null);
     setSuccessMsg(null);
@@ -89,7 +91,19 @@ export const AuthPage: React.FC = () => {
     setError(null);
     setSuccessMsg(null);
 
+    const cleanFullName = fullName.trim();
+    const cleanPhone = phoneNumber.trim();
     const cleanUsername = username.trim().toLowerCase();
+
+    if (!cleanFullName) {
+      setError('Please provide your Full Name.');
+      return;
+    }
+
+    if (!cleanPhone) {
+      setError('Please provide your Phone Number.');
+      return;
+    }
 
     // 1. Username Constraint client-side check
     if (cleanUsername.includes('admin')) {
@@ -109,16 +123,16 @@ export const AuthPage: React.FC = () => {
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match.');
-      return;
-    }
-
     setLoading(true);
 
     const res = await apiRequest<UserProfile>('/api/auth/register', {
       method: 'POST',
-      body: JSON.stringify({ username: cleanUsername, password }),
+      body: JSON.stringify({
+        fullName: cleanFullName,
+        phoneNumber: cleanPhone,
+        username: cleanUsername,
+        password,
+      }),
     });
 
     setLoading(false);
@@ -306,7 +320,40 @@ export const AuthPage: React.FC = () => {
             <form onSubmit={handleTeacherRegister} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Desired Username
+                  Full Name
+                </label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="e.g. Dr. John Doe"
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 pr-10"
+                  />
+                  <User className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Phone Number
+                </label>
+                <div className="relative">
+                  <input
+                    type="tel"
+                    required
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="e.g. +977-9800000000"
+                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 pr-10"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
+                  Username
                 </label>
                 <div className="relative">
                   <input
@@ -319,9 +366,6 @@ export const AuthPage: React.FC = () => {
                   />
                   <User className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
                 </div>
-                <p className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                  Classes and sections can be custom created after signing in.
-                </p>
               </div>
 
               <div>
@@ -336,24 +380,6 @@ export const AuthPage: React.FC = () => {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Create a secure password"
-                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 pr-10"
-                  />
-                  <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
-                  Confirm Password
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    required
-                    minLength={6}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter password"
                     className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 pr-10"
                   />
                   <Lock className="w-4 h-4 text-slate-400 absolute right-3 top-3" />

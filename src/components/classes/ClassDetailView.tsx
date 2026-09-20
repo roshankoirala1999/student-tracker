@@ -1,5 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, CalendarCheck, Award, FileText, Users, ArrowRight, X } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Plus,
+  Trash2,
+  CalendarCheck,
+  Award,
+  FileText,
+  Users,
+  ArrowRight,
+  ArrowLeft,
+  X,
+  ChevronDown,
+} from 'lucide-react';
 import { ClassItem, SectionItem, ExaminationItem, AssignmentItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
@@ -11,6 +22,7 @@ interface Props {
   onRefreshSections: () => Promise<void>;
   onSelectSection: (sectionId: string) => void;
   onClassDeleted?: () => void;
+  onBack?: () => void;
 }
 
 export const ClassDetailView: React.FC<Props> = ({
@@ -20,8 +32,13 @@ export const ClassDetailView: React.FC<Props> = ({
   onRefreshSections,
   onSelectSection,
   onClassDeleted,
+  onBack,
 }) => {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+
+  // Unified "+ Add" dropdown menu state
+  const [addDropdownOpen, setAddDropdownOpen] = useState(false);
+  const addDropdownRef = useRef<HTMLDivElement>(null);
 
   // Examinations state
   const [examinations, setExaminations] = useState<ExaminationItem[]>([]);
@@ -48,6 +65,16 @@ export const ClassDetailView: React.FC<Props> = ({
 
   // Delete Class modal
   const [deleteClassModalOpen, setDeleteClassModalOpen] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addDropdownRef.current && !addDropdownRef.current.contains(e.target as Node)) {
+        setAddDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const loadAssessments = async () => {
     try {
@@ -168,55 +195,159 @@ export const ClassDetailView: React.FC<Props> = ({
     }
   };
 
+  // Metrics calculations for the single-line percentile grid
+  const totalStudents = sections.reduce((acc, s) => acc + (s.studentCount || 0), 0);
+  const totalCapacity = Math.max(sections.length * 100, 100);
+  const enrolledPercentile = Math.round((totalStudents / totalCapacity) * 100);
+
   return (
     <div className="space-y-6">
-      {/* Top Class Banner */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs transition-colors">
-        <div>
-          <div className="text-xs font-bold text-[#2B547E] dark:text-blue-400 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#2B547E] dark:bg-blue-400" />
-            Class Management
-          </div>
-          <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{currentClass.name}</h2>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-            {sections.length} Section{sections.length === 1 ? '' : 's'} configured for this class
-          </p>
-        </div>
+      {/* Top Class Banner & Actions */}
+      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-5 sm:p-6 shadow-xs transition-colors space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                title="Back to Classes"
+                aria-label="Back to Classes"
+              >
+                <ArrowLeft className="w-4 h-4" />
+              </button>
+            )}
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Class-level Attendance Switch */}
-          <div className="flex items-center gap-3 bg-[#F4F6FA] dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 px-4 py-2.5 rounded-xl">
-            <CalendarCheck className={`w-5 h-5 ${currentClass.attendanceEnabled ? 'text-[#2B547E] dark:text-blue-400' : 'text-slate-400'}`} />
             <div>
-              <div className="text-xs font-semibold text-slate-800 dark:text-slate-200">Class Attendance</div>
-              <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                {currentClass.attendanceEnabled ? 'Enabled across all sections' : 'Hidden for all sections'}
+              <div className="text-xs font-bold text-[#2B547E] dark:text-blue-400 uppercase tracking-wider mb-0.5 flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#2B547E] dark:bg-blue-400" />
+                <span>Class Overview</span>
               </div>
+              <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{currentClass.name}</h2>
             </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Unified + Add Dropdown */}
+            <div className="relative" ref={addDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setAddDropdownOpen(!addDropdownOpen)}
+                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add</span>
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${addDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {addDropdownOpen && (
+                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddDropdownOpen(false);
+                      setAddSectionModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                  >
+                    <Users className="w-3.5 h-3.5 text-[#2B547E] dark:text-blue-400" />
+                    <span>New Section</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddDropdownOpen(false);
+                      setExamModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                  >
+                    <Award className="w-3.5 h-3.5 text-amber-500" />
+                    <span>New Examination</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddDropdownOpen(false);
+                      setAssignModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 px-3.5 py-2 text-left text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800 cursor-pointer transition-colors"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-emerald-500" />
+                    <span>New Assignment</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Attendance Toggle */}
             <button
               type="button"
               disabled={attendanceLoading}
               onClick={handleToggleAttendance}
-              className={`ml-2 px-3 py-1.5 min-h-[36px] rounded-full text-xs font-bold transition-colors cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
                 currentClass.attendanceEnabled
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                  : 'bg-slate-300 dark:bg-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-400'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
+                  : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
               }`}
             >
-              {currentClass.attendanceEnabled ? 'ON' : 'OFF'}
+              <CalendarCheck className="w-4 h-4" />
+              <span>Attendance: {currentClass.attendanceEnabled ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Delete Class Button */}
+            <button
+              type="button"
+              onClick={() => setDeleteClassModalOpen(true)}
+              className="p-2.5 min-h-[40px] text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 rounded-xl cursor-pointer transition-colors"
+              title="Delete Class"
+              aria-label="Delete Class"
+            >
+              <Trash2 className="w-4 h-4" />
             </button>
           </div>
+        </div>
 
-          {/* Delete Class Button */}
-          <button
-            type="button"
-            onClick={() => setDeleteClassModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] text-xs font-semibold text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 rounded-xl cursor-pointer transition-colors"
-            title="Delete this entire class and all its sections, students, marks, and attendance"
-          >
-            <Trash2 className="w-4 h-4" />
-            <span>Delete Class</span>
-          </button>
+        {/* Single-Line Percentile Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
+              <span>Enrollment</span>
+              <span className="text-slate-700 dark:text-slate-300 font-mono font-bold">{enrolledPercentile}%</span>
+            </div>
+            <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+              {totalStudents} <span className="text-xs font-normal text-slate-500">/ {totalCapacity}</span>
+            </div>
+            <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+              <div
+                className="bg-[#2B547E] dark:bg-blue-400 h-full rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(enrolledPercentile, 100)}%` }}
+              />
+            </div>
+          </div>
+
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Sections</div>
+            <div className="text-lg font-bold text-[#2B547E] dark:text-blue-400 mt-0.5">
+              {sections.length}
+            </div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Configured Groups</div>
+          </div>
+
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Examinations</div>
+            <div className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+              {examinations.length}
+            </div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Summative Tests</div>
+          </div>
+
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Assignments</div>
+            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+              {assignments.length}
+            </div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Continuous Tasks</div>
+          </div>
         </div>
       </div>
 
@@ -225,54 +356,83 @@ export const ClassDetailView: React.FC<Props> = ({
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-base">
             <Users className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
-            <span>Sections</span>
+            <span>Class Sections</span>
           </div>
           <button
             type="button"
             onClick={() => setAddSectionModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[38px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
           >
-            <Plus className="w-4 h-4" />
-            <span>Add Section</span>
+            <Plus className="w-3.5 h-3.5" />
+            <span>New Section</span>
           </button>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {sections.map((sec) => (
-            <div
-              key={sec.id}
-              className="border border-slate-200/80 dark:border-slate-700 rounded-2xl p-5 hover:border-[#2B547E] dark:hover:border-blue-400 hover:shadow-xs transition-all flex flex-col justify-between bg-white dark:bg-[#0F172A]"
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <h4 className="font-bold text-slate-900 dark:text-slate-100 text-sm">{sec.name}</h4>
-                  <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Enrolled: <span className="font-semibold text-slate-800 dark:text-slate-200">{sec.studentCount || 0}</span> / 100
+          {sections.length === 0 ? (
+            <div className="col-span-full py-10 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl">
+              No sections created yet for {currentClass.name}. Click &ldquo;New Section&rdquo; to begin roster entry.
+            </div>
+          ) : (
+            sections.map((sec) => {
+              const count = sec.studentCount || 0;
+              const percent = Math.min(Math.round((count / 100) * 100), 100);
+
+              return (
+                <div
+                  key={sec.id}
+                  className="border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-5 hover:border-[#2B547E] dark:hover:border-blue-400 hover:shadow-xs transition-all flex flex-col justify-between bg-white dark:bg-[#0F172A]"
+                >
+                  <div>
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <span className="text-[10px] font-bold text-[#2B547E] dark:text-blue-400 uppercase tracking-wider">
+                          Section
+                        </span>
+                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base mt-0.5">{sec.name}</h4>
+                      </div>
+                      <button
+                        type="button"
+                        title="Delete Section (Requires Password)"
+                        onClick={() => setSectionToDelete(sec)}
+                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-lg transition-colors cursor-pointer"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Progress Bar & Enrolled Stats */}
+                    <div className="mt-4 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-slate-500 dark:text-slate-400 font-medium">Students Enrolled</span>
+                        <span className="font-bold text-slate-900 dark:text-slate-100">
+                          {count} <span className="text-[11px] font-normal text-slate-400">/ 100</span>
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div
+                          className="bg-[#2B547E] dark:bg-blue-400 h-full rounded-full transition-all duration-300"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
+                    <span className="text-[11px] text-slate-400 font-medium">{100 - count} spots remaining</span>
+                    <button
+                      type="button"
+                      onClick={() => onSelectSection(sec.id)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2B547E]/10 dark:bg-blue-500/10 hover:bg-[#2B547E] dark:hover:bg-blue-600 text-[#2B547E] dark:text-blue-400 hover:text-white dark:hover:text-white rounded-lg text-xs font-semibold transition-all cursor-pointer"
+                    >
+                      <span>Open Section</span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  title="Delete Section (Requires Password)"
-                  onClick={() => setSectionToDelete(sec)}
-                  className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-2 min-w-[36px] min-h-[36px] flex items-center justify-center rounded-lg transition-colors cursor-pointer"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                <span className="text-[11px] text-slate-400 dark:text-slate-500">Capacity: 100 max</span>
-                <button
-                  type="button"
-                  onClick={() => onSelectSection(sec.id)}
-                  className="flex items-center gap-1 text-xs font-semibold text-[#2B547E] dark:text-blue-400 hover:text-[#355C7D] dark:hover:text-blue-300 transition-colors cursor-pointer py-1.5"
-                >
-                  <span>Open Section</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          ))}
+              );
+            })
+          )}
         </div>
       </div>
 
@@ -293,7 +453,7 @@ export const ClassDetailView: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setExamModalOpen(true)}
-              className="flex items-center gap-1 px-3.5 py-2 min-h-[40px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Exam</span>
@@ -336,7 +496,7 @@ export const ClassDetailView: React.FC<Props> = ({
             <button
               type="button"
               onClick={() => setAssignModalOpen(true)}
-              className="flex items-center gap-1 px-3.5 py-2 min-h-[40px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Assignment</span>
@@ -349,14 +509,14 @@ export const ClassDetailView: React.FC<Props> = ({
                 No assignments created yet for this class.
               </div>
             ) : (
-              assignments.map((as) => (
+              assignments.map((asItem) => (
                 <div
-                  key={as.id}
+                  key={asItem.id}
                   className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs"
                 >
-                  <span className="font-semibold text-slate-800 dark:text-slate-200">{as.name}</span>
-                  <span className="bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[#355C7D] dark:text-blue-400 font-mono text-[11px] font-bold">
-                    Max: {as.maxMarks}
+                  <span className="font-semibold text-slate-800 dark:text-slate-200">{asItem.name}</span>
+                  <span className="bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[#2B547E] dark:text-blue-400 font-mono text-[11px] font-bold">
+                    Max: {asItem.maxMarks}
                   </span>
                 </div>
               ))
@@ -365,60 +525,60 @@ export const ClassDetailView: React.FC<Props> = ({
         </div>
       </div>
 
-      {/* Modal: Add Section (with password confirmation) */}
+      {/* Add Section Password Confirmation Modal */}
       <PasswordConfirmModal
         isOpen={addSectionModalOpen}
-        title="Add New Section"
-        description={`Add a new section to ${currentClass.name}. Creating a section is an academic structure change requiring your current login password.`}
+        title="Add New Section (Teacher Verification)"
+        description={`Enter your password to confirm creating a new section for "${currentClass.name}".`}
         confirmButtonText="Create Section"
-        isDestructive={false}
         onClose={() => {
           setAddSectionModalOpen(false);
           setNewSectionName('');
         }}
         onConfirm={handleConfirmAddSection}
       >
-        <div className="mb-3">
+        <div className="mb-4">
           <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">
             Section Name
           </label>
           <input
             type="text"
             required
+            autoFocus
             value={newSectionName}
             onChange={(e) => setNewSectionName(e.target.value)}
-            placeholder="e.g. Section 7"
-            className="w-full px-3.5 py-2.5 min-h-[42px] text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500"
+            placeholder="e.g. Section A, Morning, or Batch 2026"
+            className="w-full px-3.5 py-2.5 min-h-[42px] text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 shadow-2xs"
           />
         </div>
       </PasswordConfirmModal>
 
-      {/* Modal: Delete Section (with password confirmation) */}
+      {/* Delete Section Password Confirmation Modal */}
       <PasswordConfirmModal
         isOpen={sectionToDelete !== null}
-        title="Delete Section"
-        description={`Are you sure you want to delete "${sectionToDelete?.name}"? All students, marks, and attendance recorded in this section will be permanently deleted.`}
-        confirmButtonText="Delete Section"
+        title={`Delete Section: ${sectionToDelete?.name}`}
+        description={`WARNING: You are about to permanently delete Section "${sectionToDelete?.name}". All student records, attendance logs, and marks associated with this section will be permanently deleted. This action cannot be undone.`}
+        confirmButtonText="Delete Section & Data"
         isDestructive={true}
         onClose={() => setSectionToDelete(null)}
         onConfirm={handleConfirmDeleteSection}
       />
 
-      {/* Modal: Delete Class (with password confirmation) */}
+      {/* Delete Class Password Confirmation Modal */}
       <PasswordConfirmModal
         isOpen={deleteClassModalOpen}
         title={`Delete Class: ${currentClass.name}`}
-        description={`Are you sure you want to permanently delete "${currentClass.name}"? This action will permanently cascade delete all ${sections.length} sections, their students, marks, examinations, assignments, and attendance logs.`}
-        confirmButtonText="Delete Entire Class"
+        description={`WARNING: You are about to delete the entire class "${currentClass.name}" and all of its sections, students, marks, and attendance logs. This action cannot be undone.`}
+        confirmButtonText="Delete Class & All Data"
         isDestructive={true}
         onClose={() => setDeleteClassModalOpen(false)}
         onConfirm={handleConfirmDeleteClass}
       />
 
-      {/* Modal: Add Examination */}
+      {/* Create Examination Modal */}
       {examModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#1E293B] rounded-t-3xl sm:rounded-2xl shadow-xl max-w-md w-full border border-slate-200/80 dark:border-slate-700 p-6 transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl max-w-sm w-full border border-slate-200/80 dark:border-slate-700/80 p-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                 Add Examination for {currentClass.name}
@@ -433,7 +593,7 @@ export const ClassDetailView: React.FC<Props> = ({
               </button>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-              This examination will automatically appear across all sections of {currentClass.name} and will be included in the dynamic marks sheets and Excel templates.
+              Add a summative exam assessment applied to all sections of {currentClass.name}.
             </p>
 
             {examError && (
@@ -452,7 +612,7 @@ export const ClassDetailView: React.FC<Props> = ({
                   required
                   value={examName}
                   onChange={(e) => setExamName(e.target.value)}
-                  placeholder="e.g. Mid-Term Examination"
+                  placeholder="e.g. Midterm Examination or Final Exam"
                   className="w-full px-3.5 py-2.5 min-h-[42px] text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500"
                 />
               </div>
@@ -467,7 +627,7 @@ export const ClassDetailView: React.FC<Props> = ({
                   required
                   value={examMaxMarks}
                   onChange={(e) => setExamMaxMarks(e.target.value)}
-                  placeholder="e.g. 50"
+                  placeholder="e.g. 50 or 100"
                   className="w-full px-3.5 py-2.5 min-h-[42px] text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500"
                 />
               </div>
@@ -493,10 +653,10 @@ export const ClassDetailView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* Modal: Add Assignment */}
+      {/* Create Assignment Modal */}
       {assignModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs">
-          <div className="bg-white dark:bg-[#1E293B] rounded-t-3xl sm:rounded-2xl shadow-xl max-w-md w-full border border-slate-200/80 dark:border-slate-700 p-6 transition-colors">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-xl max-w-sm w-full border border-slate-200/80 dark:border-slate-700/80 p-6">
             <div className="flex items-center justify-between mb-2">
               <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">
                 Add Assignment for {currentClass.name}

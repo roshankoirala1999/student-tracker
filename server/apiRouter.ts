@@ -57,8 +57,12 @@ api.use(csrfProtection);
 
 api.post('/auth/logout', authCtrl.logout);
 api.get('/auth/me', requireDb, requireAuth, authCtrl.getMe);
+api.patch('/auth/profile', requireDb, requireAuth, requireTeacher, authCtrl.updateTeacherProfile);
 api.post('/auth/change-password', authLimiter, requireDb, requireAuth, authCtrl.changePassword);
 api.post('/auth/delete-account', requireDb, requireAuth, authCtrl.deleteAccount);
+
+// Profile Questions
+api.get('/profile-questions', requireDb, requireAuth, authCtrl.listProfileQuestions);
 
 // From here down: All endpoints require active DB connection and authentication
 api.use(requireDb);
@@ -67,6 +71,8 @@ api.use(requireAuth);
 // 3. Classes
 api.get('/classes', classCtrl.listClasses);
 api.post('/classes', requireTeacher, classCtrl.createClass);
+api.put('/classes/reorder', requireTeacher, classCtrl.reorderClasses);
+api.patch('/classes/:classId/rename', requireTeacher, verifyClassOwnership, classCtrl.renameClass);
 api.delete('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.deleteClass); // Sensitive: requires password
 api.patch('/classes/:classId/attendance', requireTeacher, verifyClassOwnership, classCtrl.toggleAttendance);
 
@@ -92,6 +98,10 @@ api.put('/students/:studentId', requireTeacher, studentCtrl.updateStudent);
 api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent); // Sensitive: requires password
 api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
 
+// 6b. Students Excel Roster
+api.get('/sections/:sectionId/students/excel/export', verifySectionOwnership, marksCtrl.exportStudentRosterExcel);
+api.post('/sections/:sectionId/students/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterExcel);
+
 // 7. Marks & Dynamic Excel
 api.get('/sections/:sectionId/marks', verifySectionOwnership, marksCtrl.getSectionMarksMatrix);
 api.post('/sections/:sectionId/marks/single', requireTeacher, verifySectionOwnership, marksCtrl.updateSingleMark);
@@ -108,10 +118,16 @@ api.put('/attendance/:attendanceId', requireTeacher, attendCtrl.updateHistorical
 api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
 api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
 api.patch('/admin/teachers/:teacherId/status', requireMasterAdmin, adminCtrl.updateTeacherStatus);
+api.patch('/admin/teachers/:teacherId/profile', requireMasterAdmin, adminCtrl.updateTeacherProfileByAdmin);
 api.patch('/admin/teachers/:teacherId/lock-deletion', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
 api.patch('/admin/teachers/:teacherId/deletion-lock', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
 api.patch('/admin/teachers/:teacherId/password', requireMasterAdmin, adminCtrl.editTeacherPassword);
 api.post('/admin/teachers/:teacherId/reset-password', requireMasterAdmin, adminCtrl.resetTeacherPassword);
 api.delete('/admin/teachers/:teacherId', requireMasterAdmin, adminCtrl.deleteTeacher);
+
+// Institutional Profile Questions (Admin)
+api.get('/admin/profile-questions', requireMasterAdmin, authCtrl.listProfileQuestions);
+api.post('/admin/profile-questions', requireMasterAdmin, authCtrl.createProfileQuestion);
+api.delete('/admin/profile-questions/:id', requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
 export default api;
