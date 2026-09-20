@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, Calendar, Clock, Plus, Minus, CheckCircle, AlertTriangle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, Calendar, Clock, Plus, Minus, CheckCircle, AlertTriangle, ArrowLeft } from 'lucide-react';
 import { apiRequest } from '../../api/client.ts';
 
 interface TeacherItem {
@@ -29,6 +29,33 @@ export const TeacherExpiryModal: React.FC<Props> = ({
   const [customDays, setCustomDays] = useState<string>('');
   const [customDate, setCustomDate] = useState<string>('');
 
+  useEffect(() => {
+    if (teacher?.expiresAt) {
+      const d = new Date(teacher.expiresAt);
+      if (!isNaN(d.getTime())) {
+        const yyyy = d.getFullYear();
+        const mm = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        setCustomDate(`${yyyy}-${mm}-${dd}`);
+      }
+    } else {
+      setCustomDate('');
+    }
+    setError(null);
+    setCustomDays('');
+  }, [teacher, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !teacher) return null;
 
   const currentExpiry = teacher.expiresAt ? new Date(teacher.expiresAt) : null;
@@ -42,7 +69,7 @@ export const TeacherExpiryModal: React.FC<Props> = ({
 
     const res = await apiRequest(`/api/admin/teachers/${teacher.id}/expiry`, {
       method: 'PATCH',
-      body: JSON.stringify({ daysDelta }),
+      body: JSON.stringify({ daysDelta, daysToAdd: daysDelta }),
     });
 
     setLoading(false);
@@ -63,17 +90,34 @@ export const TeacherExpiryModal: React.FC<Props> = ({
     setLoading(true);
     setError(null);
 
-    const res = await apiRequest(`/api/admin/teachers/${teacher.id}/expiry`, {
-      method: 'PATCH',
-      body: JSON.stringify({ expiresAt: new Date(customDate).toISOString() }),
-    });
+    try {
+      const [year, month, day] = customDate.split('-').map(Number);
+      if (!year || !month || !day) {
+        setError('Please select a valid date.');
+        setLoading(false);
+        return;
+      }
+      const target = new Date(year, month - 1, day, 23, 59, 59, 999);
+      const isoDate = target.toISOString();
 
-    setLoading(false);
-    if (res.success) {
-      await onSuccess();
-      onClose();
-    } else {
-      setError(res.message || 'Failed to update account expiry date.');
+      const res = await apiRequest(`/api/admin/teachers/${teacher.id}/expiry`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          newExpiryDate: customDate,
+          expiresAt: isoDate,
+        }),
+      });
+
+      setLoading(false);
+      if (res.success) {
+        await onSuccess();
+        onClose();
+      } else {
+        setError(res.message || 'Failed to update account expiry date.');
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setError('Invalid date selected. Please pick a valid date.');
     }
   };
 
@@ -88,10 +132,15 @@ export const TeacherExpiryModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs">
-      <div className="bg-white dark:bg-[#1E293B] rounded-t-3xl sm:rounded-2xl shadow-xl max-w-md w-full border border-slate-200/80 dark:border-slate-700 overflow-hidden transition-colors">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-3 sm:p-4 backdrop-blur-xs overflow-y-auto"
+    >
+      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl max-w-md w-full border border-slate-200/80 dark:border-slate-700 overflow-hidden transition-colors max-h-[90vh] flex flex-col my-auto">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A]">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-3.5 border-b border-slate-100 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A] shrink-0">
           <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
             <Clock className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
             <span>Manage Teacher Expiry</span>
@@ -99,14 +148,15 @@ export const TeacherExpiryModal: React.FC<Props> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
-            className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-2 min-w-[40px] min-h-[40px] flex items-center justify-center cursor-pointer transition-colors"
+            aria-label="Back / Close"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200/70 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <ArrowLeft className="w-4 h-4" />
+            <span>Back</span>
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
           {/* Teacher Summary Box */}
           <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
             <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">
@@ -228,7 +278,13 @@ export const TeacherExpiryModal: React.FC<Props> = ({
           </form>
 
           {/* Direct Date Picker */}
-          <div className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-700">
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              handleSetExactDate();
+            }}
+            className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-700"
+          >
             <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
               Or Set Specific Expiry Date
             </label>
@@ -240,23 +296,25 @@ export const TeacherExpiryModal: React.FC<Props> = ({
                 className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
               />
               <button
-                type="button"
+                type="submit"
                 disabled={loading || !customDate}
-                onClick={handleSetExactDate}
                 className="px-4 py-2 text-xs font-semibold bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl cursor-pointer transition-colors"
               >
                 Set Date
               </button>
             </div>
-          </div>
+          </form>
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A] flex justify-end">
+        <div className="px-6 py-3.5 border-t border-slate-100 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A] flex justify-between items-center shrink-0">
+          <span className="text-[11px] text-slate-500 dark:text-slate-400">
+            Changes apply immediately upon selection.
+          </span>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer"
+            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 cursor-pointer rounded-lg hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
           >
             Close
           </button>

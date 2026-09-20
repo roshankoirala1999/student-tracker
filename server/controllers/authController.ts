@@ -363,6 +363,41 @@ export async function getMe(req: Request, res: Response) {
     const isExpired = isTeacher && expiryTime < Date.now();
     const daysRemaining = isTeacher ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
+    // Check compulsory fields for teachers
+    let missingFields: string[] = [];
+    let isProfileIncomplete = false;
+
+    if (isTeacher) {
+      // 1. Full Name (compulsory)
+      if (!user?.fullName || typeof user.fullName !== 'string' || user.fullName.trim() === '') {
+        missingFields.push('Full Name');
+      }
+
+      // 2. Institution / College (compulsory)
+      if (!user?.college || typeof user.college !== 'string' || user.college.trim() === '') {
+        missingFields.push('College / Institution');
+      }
+
+      // 3. Required Institutional Profile Questions
+      const requiredQuestions = await db.collection('profile_questions')
+        .find({ required: true })
+        .sort({ order: 1, createdAt: 1 })
+        .toArray();
+
+      for (const q of requiredQuestions) {
+        const qId = q._id.toString();
+        const val = user?.customFields?.[qId];
+        if (!val || typeof val !== 'string' || val.trim() === '') {
+          missingFields.push(q.questionLabel || q.questionText || 'Institutional Question');
+        }
+      }
+
+      isProfileIncomplete = missingFields.length > 0;
+    }
+
+    const isReadOnly = isTeacher ? (isExpired || isProfileIncomplete) : false;
+    const readOnlyReason = isTeacher ? (isExpired ? 'expired' : isProfileIncomplete ? 'incomplete_profile' : null) : null;
+
     return res.status(200).json({
       success: true,
       data: {
@@ -379,6 +414,10 @@ export async function getMe(req: Request, res: Response) {
         isDeletionLocked: user ? !!user.isDeletionLocked : false,
         mustChangePassword: user ? !!user.mustChangePassword : false,
         tokenVersion: user ? user.tokenVersion ?? 0 : 0,
+        fullNameLocked: !!user?.fullNameLocked,
+        isReadOnly,
+        readOnlyReason,
+        missingFields,
         expiresAt: userExpiresAt,
         isExpired,
         daysRemaining,
@@ -397,54 +436,14 @@ export async function updateTeacherProfile(req: Request, res: Response) {
     return res.status(401).json({ success: false, message: 'Not authenticated.' });
   }
 
-  const { fullName, phoneNumber, username, college, dob, password } = req.body;
+  const { fullName, phoneNumber, username, college, dob, customFields, password } = req.body;
 
-  // Strict boundary: Rejects any teacher attempt to mutate fullName, phoneNumber, or username
-  if (fullName !== undefined || phoneNumber !== undefined || username !== undefined) {
+  // Strict boundary: Rejects any teacher attempt to mutate phoneNumber or username
+  if (phoneNumber !== undefined || username !== undefined) {
     return res.status(403).json({
       success: false,
-      message: 'Name, Phone Number, and Username are editable by Admin only.',
+      message: 'Phone Number and Username can only be updated by the master administrator.',
     });
-  }
-
-  const updateFields: any = {};
-
-  if (college !== undefined) {
-    updateFields.college = typeof college === 'string' ? college.trim() : '';
-  }
-
-  if (dob !== undefined) {
-    const cleanDob = typeof dob === 'string' ? dob.trim() : '';
-    if (cleanDob !== '') {
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDob)) {
-        return res.status(400).json({
-          success: false,
-          message: 'Date of Birth must be in YYYY-MM-DD format (e.g., 2056-01-01).',
-        });
-      }
-    }
-    updateFields.dob = cleanDob;
-  }
-
-  let newPassHash: string | undefined;
-  let cleanNewPass: string | undefined;
-
-  if (password && typeof password === 'string' && password.trim() !== '') {
-    cleanNewPass = password.trim();
-    if (cleanNewPass.length < 6) {
-      return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long.' });
-    }
-    const lower = cleanNewPass.toLowerCase();
-    if (lower.includes('password') || lower.includes('admin')) {
-      return res.status(400).json({
-        success: false,
-        message: "Password cannot contain reserved words such as 'password' or 'admin'.",
-      });
-    }
-    newPassHash = await hashPassword(cleanNewPass);
-    updateFields.passwordHash = newPassHash;
-    updateFields.plainPassword = cleanNewPass;
-    updateFields.mustChangePassword = false;
   }
 
   try {
@@ -454,7 +453,64 @@ export async function updateTeacherProfile(req: Request, res: Response) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
-    if (newPassHash) {
+    const updateFields: any = {};
+
+    // Allow teacher to edit full name 1 time only
+    if (fullName !== undefined) {
+      if (user.fullNameLocked) {
+        return res.status(403).json({
+          success: false,
+          message: 'Full Name has already been set and locked. Contact administrator to update.',
+        });
+      }
+      const cleanFullName = typeof fullName === 'string' ? fullName.trim() : '';
+      if (!cleanFullName) {
+        return res.status(400).json({ success: false, message: 'Full Name cannot be empty.' });
+      }
+      updateFields.fullName = cleanFullName;
+      updateFields.fullNameLocked = true;
+    }
+
+    if (college !== undefined) {
+      updateFields.college = typeof college === 'string' ? college.trim() : '';
+    }
+
+    if (dob !== undefined) {
+      const cleanDob = typeof dob === 'string' ? dob.trim() : '';
+      if (cleanDob !== '') {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDob)) {
+          return res.status(400).json({
+            success: false,
+            message: 'Date of Birth must be in YYYY-MM-DD format (e.g., 2056-01-01).',
+          });
+        }
+      }
+      updateFields.dob = cleanDob;
+    }
+
+    if (customFields !== undefined && typeof customFields === 'object' && customFields !== null) {
+      updateFields.customFields = customFields;
+    }
+
+    let newPassHash: string | undefined;
+    let cleanNewPass: string | undefined;
+
+    if (password && typeof password === 'string' && password.trim() !== '') {
+      cleanNewPass = password.trim();
+      if (cleanNewPass.length < 6) {
+        return res.status(400).json({ success: false, message: 'New password must be at least 6 characters long.' });
+      }
+      const lower = cleanNewPass.toLowerCase();
+      if (lower.includes('password') || lower.includes('admin')) {
+        return res.status(400).json({
+          success: false,
+          message: "Password cannot contain reserved words such as 'password' or 'admin'.",
+        });
+      }
+      newPassHash = await hashPassword(cleanNewPass);
+      updateFields.passwordHash = newPassHash;
+      updateFields.plainPassword = cleanNewPass;
+      updateFields.mustChangePassword = false;
       const nextTokenVer = (user.tokenVersion || 0) + 1;
       updateFields.tokenVersion = nextTokenVer;
     }
@@ -465,6 +521,36 @@ export async function updateTeacherProfile(req: Request, res: Response) {
     );
 
     const updatedUser = await db.collection('users').findOne({ _id: user._id });
+
+    // Recompute compulsory completeness
+    const expiryTime = updatedUser?.expiresAt ? new Date(updatedUser.expiresAt).getTime() : Date.now() + 3 * 86400000;
+    const isExpired = updatedUser?.role === 'teacher' && expiryTime < Date.now();
+    const daysRemaining = updatedUser?.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+
+    let missingFields: string[] = [];
+    if (updatedUser?.role === 'teacher') {
+      if (!updatedUser?.fullName || typeof updatedUser.fullName !== 'string' || updatedUser.fullName.trim() === '') {
+        missingFields.push('Full Name');
+      }
+      if (!updatedUser?.college || typeof updatedUser.college !== 'string' || updatedUser.college.trim() === '') {
+        missingFields.push('College / Institution');
+      }
+      const requiredQuestions = await db.collection('profile_questions')
+        .find({ required: true })
+        .sort({ order: 1, createdAt: 1 })
+        .toArray();
+      for (const q of requiredQuestions) {
+        const qId = q._id.toString();
+        const val = updatedUser?.customFields?.[qId];
+        if (!val || typeof val !== 'string' || val.trim() === '') {
+          missingFields.push(q.questionLabel || q.questionText || 'Institutional Question');
+        }
+      }
+    }
+
+    const isProfileIncomplete = missingFields.length > 0;
+    const isReadOnly = isExpired || isProfileIncomplete;
+    const readOnlyReason = isExpired ? 'expired' : isProfileIncomplete ? 'incomplete_profile' : null;
 
     return res.json({
       success: true,
@@ -483,6 +569,13 @@ export async function updateTeacherProfile(req: Request, res: Response) {
         isDeletionLocked: !!updatedUser!.isDeletionLocked,
         mustChangePassword: !!updatedUser!.mustChangePassword,
         tokenVersion: updatedUser!.tokenVersion ?? 0,
+        fullNameLocked: !!updatedUser!.fullNameLocked,
+        isReadOnly,
+        readOnlyReason,
+        missingFields,
+        expiresAt: updatedUser!.expiresAt,
+        isExpired,
+        daysRemaining,
         createdAt: updatedUser!.createdAt,
       },
     });
@@ -497,7 +590,7 @@ export async function listProfileQuestions(req: Request, res: Response) {
     const db = getDatabase();
     const questions = await db.collection('profile_questions')
       .find({})
-      .sort({ createdAt: 1 })
+      .sort({ order: 1, createdAt: 1 })
       .toArray();
 
     const formatted = questions.map((q) => ({
@@ -505,6 +598,7 @@ export async function listProfileQuestions(req: Request, res: Response) {
       questionLabel: q.questionLabel || q.questionText || '',
       questionText: q.questionText || q.questionLabel || '',
       required: Boolean(q.required),
+      order: q.order ?? 0,
       createdAt: q.createdAt,
     }));
 
@@ -528,10 +622,13 @@ export async function createProfileQuestion(req: Request, res: Response) {
     const cleanLabel = rawLabel.trim();
     const now = new Date().toISOString();
 
+    const count = await db.collection('profile_questions').countDocuments();
+
     const result = await db.collection('profile_questions').insertOne({
       questionLabel: cleanLabel,
       questionText: cleanLabel,
       required: isRequired,
+      order: count,
       createdAt: now,
     });
 
@@ -542,6 +639,7 @@ export async function createProfileQuestion(req: Request, res: Response) {
         questionLabel: cleanLabel,
         questionText: cleanLabel,
         required: isRequired,
+        order: count,
         createdAt: now,
       },
       message: 'Profile question created successfully.',
@@ -549,6 +647,31 @@ export async function createProfileQuestion(req: Request, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Failed to create profile question.' });
+  }
+}
+
+export async function reorderProfileQuestions(req: Request, res: Response) {
+  const { questionIds } = req.body;
+  if (!Array.isArray(questionIds)) {
+    return res.status(400).json({ success: false, message: 'questionIds array is required.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const updates = questionIds.map((id: string, index: number) => {
+      if (ObjectId.isValid(id)) {
+        return db.collection('profile_questions').updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { order: index } }
+        );
+      }
+      return Promise.resolve();
+    });
+    await Promise.all(updates);
+    return res.json({ success: true, message: 'Institutional questions reordered successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to reorder questions.' });
   }
 }
 

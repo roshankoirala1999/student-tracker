@@ -113,9 +113,16 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
                   <User className="w-4 h-4" />
                 </div>
                 <div className="hidden sm:block">
-                  <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight">
-                    {user.fullName || user.username}
-                  </p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-xs font-semibold text-slate-800 dark:text-slate-200 leading-tight">
+                      {user.fullName || user.username}
+                    </p>
+                    {user.isReadOnly && (
+                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-950/70 text-amber-800 dark:text-amber-300">
+                        Read-Only
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-500 dark:text-slate-400">Teacher Profile</p>
                 </div>
               </button>

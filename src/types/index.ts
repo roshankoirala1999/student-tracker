@@ -27,6 +27,10 @@ export interface UserProfile {
   isExpired?: boolean;
   daysRemaining?: number;
   createdAt: string;
+  fullNameLocked?: boolean;
+  isReadOnly?: boolean;
+  readOnlyReason?: 'expired' | 'incomplete_profile' | null;
+  missingFields?: string[];
 }
 
 export interface TeacherItem {
@@ -42,6 +46,7 @@ export interface TeacherItem {
   status: 'active' | 'suspended';
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
+  fullNameLocked?: boolean;
   expiresAt?: string;
   isExpired?: boolean;
   daysRemaining?: number;

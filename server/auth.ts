@@ -36,6 +36,8 @@ const CSRF_COOKIE_NAME = 'csrf_token';
 export interface JwtPayload {
   userId: string;
   username: string;
+  fullName?: string;
+  college?: string;
   role: UserRole;
   status: UserStatus;
   tokenVersion?: number;

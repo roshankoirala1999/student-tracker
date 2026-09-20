@@ -61,8 +61,11 @@ api.patch('/auth/profile', requireDb, requireAuth, requireTeacher, authCtrl.upda
 api.post('/auth/change-password', authLimiter, requireDb, requireAuth, authCtrl.changePassword);
 api.post('/auth/delete-account', requireDb, requireAuth, authCtrl.deleteAccount);
 
-// Profile Questions
+// Profile Questions (Accessible for all authenticated users to read, Master Admin to manage)
 api.get('/profile-questions', requireDb, requireAuth, authCtrl.listProfileQuestions);
+api.post('/profile-questions', requireDb, requireAuth, requireMasterAdmin, authCtrl.createProfileQuestion);
+api.put('/profile-questions/reorder', requireDb, requireAuth, requireMasterAdmin, authCtrl.reorderProfileQuestions);
+api.delete('/profile-questions/:id', requireDb, requireAuth, requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
 // From here down: All endpoints require active DB connection and authentication
 api.use(requireDb);
@@ -133,6 +136,7 @@ api.delete('/admin/teachers/:teacherId', requireMasterAdmin, adminCtrl.deleteTea
 // Institutional Profile Questions (Admin)
 api.get('/admin/profile-questions', requireMasterAdmin, authCtrl.listProfileQuestions);
 api.post('/admin/profile-questions', requireMasterAdmin, authCtrl.createProfileQuestion);
+api.put('/admin/profile-questions/reorder', requireMasterAdmin, authCtrl.reorderProfileQuestions);
 api.delete('/admin/profile-questions/:id', requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
 export default api;

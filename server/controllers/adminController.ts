@@ -51,6 +51,7 @@ export async function listAllTeachers(req: Request, res: Response) {
         status: t.status || 'active',
         isDeletionLocked: !!t.isDeletionLocked,
         mustChangePassword: !!t.mustChangePassword,
+        fullNameLocked: !!t.fullNameLocked,
         expiresAt: t.expiresAt || new Date(expiryTime).toISOString(),
         isExpired,
         daysRemaining,
@@ -458,7 +459,7 @@ export async function inspectTeacherData(req: Request, res: Response) {
 
 export async function updateTeacherExpiry(req: Request, res: Response) {
   const { teacherId } = req.params;
-  const { daysToAdd, newExpiryDate } = req.body;
+  const { daysToAdd, daysDelta, newExpiryDate, expiresAt } = req.body;
 
   if (!teacherId || !ObjectId.isValid(teacherId)) {
     return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
@@ -473,17 +474,22 @@ export async function updateTeacherExpiry(req: Request, res: Response) {
 
     let targetIsoDate: string;
 
-    if (typeof newExpiryDate === 'string' && newExpiryDate.trim().length > 0) {
-      const parsed = new Date(newExpiryDate);
+    const rawDate = newExpiryDate || expiresAt;
+    const rawDays = daysToAdd !== undefined ? daysToAdd : daysDelta;
+
+    if (rawDate && typeof rawDate === 'string' && rawDate.trim().length > 0) {
+      const cleanDate = rawDate.trim();
+      const parsed = new Date(cleanDate.includes('T') ? cleanDate : `${cleanDate}T23:59:59.999Z`);
       if (isNaN(parsed.getTime())) {
         return res.status(400).json({ success: false, message: 'Invalid date format for expiry date.' });
       }
       targetIsoDate = parsed.toISOString();
-    } else if (typeof daysToAdd === 'number' && !isNaN(daysToAdd)) {
+    } else if (rawDays !== undefined && !isNaN(Number(rawDays))) {
+      const numDays = Number(rawDays);
       const now = Date.now();
       const currentExpiryTime = teacher.expiresAt ? new Date(teacher.expiresAt).getTime() : now;
       const baseTime = currentExpiryTime > now ? currentExpiryTime : now;
-      const newTime = baseTime + daysToAdd * 24 * 60 * 60 * 1000;
+      const newTime = baseTime + numDays * 24 * 60 * 60 * 1000;
       targetIsoDate = new Date(newTime).toISOString();
     } else {
       return res.status(400).json({ success: false, message: 'Please provide either daysToAdd or newExpiryDate.' });

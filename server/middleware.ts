@@ -124,6 +124,8 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
     req.user = {
       userId: user._id.toString(),
       username: user.username,
+      fullName: user.fullName || '',
+      college: user.college || '',
       role: user.role,
       status: user.status || 'active',
       tokenVersion: dbTokenVersion,
@@ -144,7 +146,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
 }
 
 // 4. Require Teacher Role
-export function requireTeacher(req: Request, res: Response, next: NextFunction) {
+export async function requireTeacher(req: Request, res: Response, next: NextFunction) {
   if (!req.user || req.user.role !== 'teacher') {
     return res.status(403).json({
       success: false,
@@ -153,15 +155,50 @@ export function requireTeacher(req: Request, res: Response, next: NextFunction) 
     });
   }
 
-  // If teacher account is expired, allow GET (read-only for viewing students, marks, etc.), but block mutating operations
-  if (req.user.isExpired && req.method !== 'GET') {
-    const isSafePath = req.path.includes('/auth/logout') || req.path.includes('/auth/change-password');
+  // If teacher is in read-only mode, allow GET (read-only) and profile editing, but block other mutating operations
+  if (req.method !== 'GET') {
+    const isSafePath = req.path.includes('/auth/logout') || req.path.includes('/auth/change-password') || req.path.includes('/auth/profile');
     if (!isSafePath) {
-      return res.status(403).json({
-        success: false,
-        error: 'ACCOUNT_EXPIRED',
-        message: 'Your teacher account has expired. Please contact the administrator to renew access. (Read-only mode)',
-      });
+      if (req.user.isExpired) {
+        return res.status(403).json({
+          success: false,
+          error: 'ACCOUNT_EXPIRED',
+          message: 'Your teacher account has expired. You are currently in Read-Only Mode. Please contact the administrator to renew access.',
+        });
+      }
+
+      const missingName = !req.user.fullName || !req.user.fullName.trim();
+      const missingCollege = !req.user.college || !req.user.college.trim();
+      if (missingName || missingCollege) {
+        return res.status(403).json({
+          success: false,
+          error: 'PROFILE_INCOMPLETE',
+          message: 'You are in Read-Only Mode because compulsory profile fields are incomplete. Please complete your Teacher Profile to unlock editing access.',
+        });
+      }
+
+      // Check required institutional profile questions
+      try {
+        const db = getDatabase();
+        const requiredQuestions = await db.collection('profile_questions').find({ required: true }).toArray();
+        if (requiredQuestions.length > 0) {
+          const userDoc = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+          const hasMissingRequiredQ = requiredQuestions.some((q) => {
+            const val = userDoc?.customFields?.[q._id.toString()];
+            return !val || typeof val !== 'string' || !val.trim();
+          });
+
+          if (hasMissingRequiredQ) {
+            return res.status(403).json({
+              success: false,
+              error: 'PROFILE_INCOMPLETE',
+              message: 'You are in Read-Only Mode because compulsory institutional questions are incomplete. Please complete your Teacher Profile to unlock editing access.',
+            });
+          }
+        }
+      } catch (err) {
+        console.error('Error checking required questions in requireTeacher:', err);
+      }
     }
   }
 
