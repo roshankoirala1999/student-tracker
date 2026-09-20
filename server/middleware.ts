@@ -117,12 +117,19 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
+    const expiryTime = user.expiresAt ? new Date(user.expiresAt).getTime() : Date.now() + 3 * 86400000;
+    const isExpired = user.role === 'teacher' && expiryTime < Date.now();
+    const daysRemaining = user.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+
     req.user = {
       userId: user._id.toString(),
       username: user.username,
       role: user.role,
       status: user.status || 'active',
       tokenVersion: dbTokenVersion,
+      isExpired,
+      expiresAt: user.expiresAt,
+      daysRemaining,
     };
 
     next();
@@ -145,6 +152,19 @@ export function requireTeacher(req: Request, res: Response, next: NextFunction) 
       message: 'Access restricted to teachers.',
     });
   }
+
+  // If teacher account is expired, allow GET (read-only for viewing students, marks, etc.), but block mutating operations
+  if (req.user.isExpired && req.method !== 'GET') {
+    const isSafePath = req.path.includes('/auth/logout') || req.path.includes('/auth/change-password');
+    if (!isSafePath) {
+      return res.status(403).json({
+        success: false,
+        error: 'ACCOUNT_EXPIRED',
+        message: 'Your teacher account has expired. Please contact the administrator to renew access. (Read-only mode)',
+      });
+    }
+  }
+
   next();
 }
 

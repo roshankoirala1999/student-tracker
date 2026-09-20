@@ -10,10 +10,12 @@ import {
   ArrowLeft,
   X,
   ChevronDown,
+  AlertTriangle,
 } from 'lucide-react';
 import { ClassItem, SectionItem, ExaminationItem, AssignmentItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
+import { useAuth } from '../../context/AuthContext.tsx';
 
 interface Props {
   currentClass: ClassItem;
@@ -34,6 +36,8 @@ export const ClassDetailView: React.FC<Props> = ({
   onClassDeleted,
   onBack,
 }) => {
+  const { user } = useAuth();
+  const isExpired = !!user?.isExpired;
   const [attendanceLoading, setAttendanceLoading] = useState(false);
 
   // Unified "+ Add" dropdown menu state
@@ -232,8 +236,10 @@ export const ClassDetailView: React.FC<Props> = ({
             <div className="relative" ref={addDropdownRef}>
               <button
                 type="button"
+                disabled={isExpired}
                 onClick={() => setAddDropdownOpen(!addDropdownOpen)}
-                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                title={isExpired ? 'Account expired (read-only)' : 'Add Section, Exam, or Assignment'}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add</span>
@@ -282,13 +288,14 @@ export const ClassDetailView: React.FC<Props> = ({
             {/* Attendance Toggle */}
             <button
               type="button"
-              disabled={attendanceLoading}
+              disabled={attendanceLoading || isExpired}
               onClick={handleToggleAttendance}
-              className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
                 currentClass.attendanceEnabled
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                   : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
               }`}
+              title={isExpired ? 'Account expired (read-only)' : undefined}
             >
               <CalendarCheck className="w-4 h-4" />
               <span>Attendance: {currentClass.attendanceEnabled ? 'ON' : 'OFF'}</span>
@@ -297,15 +304,26 @@ export const ClassDetailView: React.FC<Props> = ({
             {/* Delete Class Button */}
             <button
               type="button"
+              disabled={isExpired}
               onClick={() => setDeleteClassModalOpen(true)}
-              className="p-2.5 min-h-[40px] text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 rounded-xl cursor-pointer transition-colors"
-              title="Delete Class"
+              className="p-2.5 min-h-[40px] text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer transition-colors"
+              title={isExpired ? 'Account expired (read-only)' : 'Delete Class'}
               aria-label="Delete Class"
             >
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         </div>
+
+        {/* Expired Account Banner */}
+        {isExpired && (
+          <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl p-3.5 flex items-center gap-3 text-rose-800 dark:text-rose-200 text-xs">
+            <AlertTriangle className="w-5 h-5 text-rose-600 dark:text-rose-400 shrink-0" />
+            <div>
+              <span className="font-bold">Account Expired (Read-Only Mode):</span> You can view student data, sections, and assessments. Modifications, creations, and deletions are disabled until an administrator extends your account.
+            </div>
+          </div>
+        )}
 
         {/* Single-Line Percentile Grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
@@ -360,8 +378,10 @@ export const ClassDetailView: React.FC<Props> = ({
           </div>
           <button
             type="button"
+            disabled={isExpired}
             onClick={() => setAddSectionModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[38px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[38px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            title={isExpired ? 'Account expired (read-only)' : 'New Section'}
           >
             <Plus className="w-3.5 h-3.5" />
             <span>New Section</span>
@@ -393,9 +413,10 @@ export const ClassDetailView: React.FC<Props> = ({
                       </div>
                       <button
                         type="button"
-                        title="Delete Section (Requires Password)"
+                        disabled={isExpired}
+                        title={isExpired ? 'Account expired (read-only)' : 'Delete Section (Requires Password)'}
                         onClick={() => setSectionToDelete(sec)}
-                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-lg transition-colors cursor-pointer"
+                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed p-1.5 rounded-lg transition-colors cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -452,8 +473,10 @@ export const ClassDetailView: React.FC<Props> = ({
             </div>
             <button
               type="button"
+              disabled={isExpired}
               onClick={() => setExamModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              title={isExpired ? 'Account expired (read-only)' : 'Add Exam'}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Exam</span>
@@ -495,8 +518,10 @@ export const ClassDetailView: React.FC<Props> = ({
             </div>
             <button
               type="button"
+              disabled={isExpired}
               onClick={() => setAssignModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              title={isExpired ? 'Account expired (read-only)' : 'Add Assignment'}
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Assignment</span>

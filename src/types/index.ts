@@ -23,6 +23,9 @@ export interface UserProfile {
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
   tokenVersion?: number;
+  expiresAt?: string;
+  isExpired?: boolean;
+  daysRemaining?: number;
   createdAt: string;
 }
 
@@ -39,6 +42,9 @@ export interface TeacherItem {
   status: 'active' | 'suspended';
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
+  expiresAt?: string;
+  isExpired?: boolean;
+  daysRemaining?: number;
   createdAt: string;
   classCount: number;
   studentCount: number;

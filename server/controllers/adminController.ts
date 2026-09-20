@@ -33,23 +33,32 @@ export async function listAllTeachers(req: Request, res: Response) {
     const studentCountMap = new Map<string, number>();
     studentCounts.forEach((s) => studentCountMap.set(s._id, s.count));
 
-    const formatted = teachers.map((t) => ({
-      id: t._id.toString(),
-      username: t.username,
-      fullName: t.fullName || '',
-      phoneNumber: t.phoneNumber || '',
-      college: t.college || '',
-      dob: t.dob || '',
-      customFields: t.customFields || {},
-      plainPassword: t.plainPassword || '',
-      role: t.role,
-      status: t.status || 'active',
-      isDeletionLocked: !!t.isDeletionLocked,
-      mustChangePassword: !!t.mustChangePassword,
-      createdAt: t.createdAt,
-      classCount: classCountMap.get(t._id.toString()) || 0,
-      studentCount: studentCountMap.get(t._id.toString()) || 0,
-    }));
+    const formatted = teachers.map((t) => {
+      const expiryTime = t.expiresAt ? new Date(t.expiresAt).getTime() : Date.now() + 3 * 86400000;
+      const isExpired = expiryTime < Date.now();
+      const daysRemaining = Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24));
+
+      return {
+        id: t._id.toString(),
+        username: t.username,
+        fullName: t.fullName || '',
+        phoneNumber: t.phoneNumber || '',
+        college: t.college || '',
+        dob: t.dob || '',
+        customFields: t.customFields || {},
+        plainPassword: t.plainPassword || '',
+        role: t.role,
+        status: t.status || 'active',
+        isDeletionLocked: !!t.isDeletionLocked,
+        mustChangePassword: !!t.mustChangePassword,
+        expiresAt: t.expiresAt || new Date(expiryTime).toISOString(),
+        isExpired,
+        daysRemaining,
+        createdAt: t.createdAt,
+        classCount: classCountMap.get(t._id.toString()) || 0,
+        studentCount: studentCountMap.get(t._id.toString()) || 0,
+      };
+    });
 
     return res.json({ success: true, data: formatted });
   } catch (err) {
@@ -439,6 +448,63 @@ export async function inspectTeacherData(req: Request, res: Response) {
         },
         classes: formattedClasses,
         totalStudents: students.length,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+export async function updateTeacherExpiry(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  const { daysToAdd, newExpiryDate } = req.body;
+
+  if (!teacherId || !ObjectId.isValid(teacherId)) {
+    return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const teacher = await db.collection('users').findOne({ _id: new ObjectId(teacherId), role: 'teacher' });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found.' });
+    }
+
+    let targetIsoDate: string;
+
+    if (typeof newExpiryDate === 'string' && newExpiryDate.trim().length > 0) {
+      const parsed = new Date(newExpiryDate);
+      if (isNaN(parsed.getTime())) {
+        return res.status(400).json({ success: false, message: 'Invalid date format for expiry date.' });
+      }
+      targetIsoDate = parsed.toISOString();
+    } else if (typeof daysToAdd === 'number' && !isNaN(daysToAdd)) {
+      const now = Date.now();
+      const currentExpiryTime = teacher.expiresAt ? new Date(teacher.expiresAt).getTime() : now;
+      const baseTime = currentExpiryTime > now ? currentExpiryTime : now;
+      const newTime = baseTime + daysToAdd * 24 * 60 * 60 * 1000;
+      targetIsoDate = new Date(newTime).toISOString();
+    } else {
+      return res.status(400).json({ success: false, message: 'Please provide either daysToAdd or newExpiryDate.' });
+    }
+
+    await db.collection('users').updateOne(
+      { _id: teacher._id },
+      { $set: { expiresAt: targetIsoDate } }
+    );
+
+    const updatedExpiryTime = new Date(targetIsoDate).getTime();
+    const isExpired = updatedExpiryTime < Date.now();
+    const daysRemaining = Math.ceil((updatedExpiryTime - Date.now()) / (1000 * 60 * 60 * 24));
+
+    return res.json({
+      success: true,
+      message: 'Teacher account expiry updated successfully.',
+      data: {
+        expiresAt: targetIsoDate,
+        isExpired,
+        daysRemaining,
       },
     });
   } catch (err) {

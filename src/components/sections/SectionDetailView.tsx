@@ -11,13 +11,15 @@ import {
   ArrowLeft,
   Users,
   AlertCircle,
-  FileSpreadsheet,
+  FileText,
 } from 'lucide-react';
 import { ClassItem, SectionItem, StudentItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
+import { generateCsv, downloadCsvFile } from '../../utils/csv.ts';
 import { StudentModal } from './StudentModal.tsx';
 import { StudentProfileModal } from './StudentProfileModal.tsx';
-import { ExcelUploadModal } from '../excel/ExcelUploadModal.tsx';
+import { StudentCsvUploadModal } from '../students/StudentCsvUploadModal.tsx';
 import { MarksTableModal } from '../marks/MarksTableModal.tsx';
 import { AttendanceModal } from '../attendance/AttendanceModal.tsx';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
@@ -35,6 +37,9 @@ export const SectionDetailView: React.FC<Props> = ({
   onBackToClass,
   onRefreshSectionCount,
 }) => {
+  const { user } = useAuth();
+  const isExpired = !!user?.isExpired;
+
   const [students, setStudents] = useState<StudentItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [maxLimit, setMaxLimit] = useState<number>(100);
@@ -46,7 +51,7 @@ export const SectionDetailView: React.FC<Props> = ({
   const [selectedStudentForEdit, setSelectedStudentForEdit] = useState<StudentItem | null>(null);
 
   const [profileStudentId, setProfileStudentId] = useState<string | null>(null);
-  const [excelUploadOpen, setExcelUploadOpen] = useState(false);
+  const [studentUploadOpen, setStudentUploadOpen] = useState(false);
   const [marksTableOpen, setMarksTableOpen] = useState(false);
   const [attendanceOpen, setAttendanceOpen] = useState(false);
 
@@ -78,6 +83,8 @@ export const SectionDetailView: React.FC<Props> = ({
     parentContact: string;
     contactNumber?: string;
   }) => {
+    if (isExpired) return;
+
     if (selectedStudentForEdit) {
       // Update student
       const res = await apiRequest(`/api/students/${selectedStudentForEdit.id}`, {
@@ -103,7 +110,7 @@ export const SectionDetailView: React.FC<Props> = ({
   };
 
   const handleConfirmDeleteStudent = async (password: string) => {
-    if (!studentToDelete) return;
+    if (isExpired || !studentToDelete) return;
     const res = await apiRequest(`/api/students/${studentToDelete.id}`, {
       method: 'DELETE',
       body: JSON.stringify({ password }),
@@ -116,26 +123,27 @@ export const SectionDetailView: React.FC<Props> = ({
     await onRefreshSectionCount();
   };
 
-  const handleDownloadExcelTemplate = async () => {
-    try {
-      const res = await apiRequest<Blob>(`/api/sections/${section.id}/excel/sample`);
-      if (res.success && res.data) {
-        const blob = res.data;
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `${currentClass.name.replace(/\s+/g, '_')}_${section.name.replace(
-          /\s+/g,
-          '_'
-        )}_Marks_Template.xlsx`;
-        document.body.appendChild(a);
-        a.click();
-        window.URL.revokeObjectURL(url);
-        a.remove();
-      }
-    } catch {
-      // ignore
+  const handleDownloadStudentTemplate = () => {
+    const headers = ['Roll Number', 'Student Name', 'Symbol Number', 'Contact Number'];
+    let rows: (string | number)[][] = [];
+
+    if (students.length > 0) {
+      rows = students.map((s) => [
+        s.rollNumber,
+        s.studentName || '',
+        s.symbolNumber || '',
+        s.contactNumber || s.parentContact || '',
+      ]);
+    } else {
+      rows = [
+        [1, 'Sample Student One', 'SYM-1001', '9841000001'],
+        [2, 'Sample Student Two', 'SYM-1002', '9841000002'],
+      ];
     }
+
+    const csv = generateCsv(headers, rows);
+    const filename = `${currentClass.name.replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Student_Info_Template.csv`;
+    downloadCsvFile(filename, csv);
   };
 
   const isFull = totalCount >= maxLimit;
@@ -179,38 +187,39 @@ export const SectionDetailView: React.FC<Props> = ({
           {/* Add Student */}
           <button
             type="button"
-            disabled={isFull}
+            disabled={isFull || isExpired}
             onClick={() => {
               setSelectedStudentForEdit(null);
               setStudentModalOpen(true);
             }}
             className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-            title={isFull ? 'Section limit reached (100 students)' : 'Add Student'}
+            title={isExpired ? 'Account expired (read-only)' : isFull ? 'Section limit reached (100 students)' : 'Add Student'}
           >
             <UserPlus className="w-4 h-4" />
             <span>Add Student</span>
           </button>
 
-          {/* Download Excel Template */}
+          {/* Download CSV Template (Roll, Name, Symbol, Contact) */}
           <button
             type="button"
-            onClick={handleDownloadExcelTemplate}
+            onClick={handleDownloadStudentTemplate}
             className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            title="Download Excel (.xlsx) template with dynamic coursework and examination headers"
+            title="Download CSV student info template (Roll Number, Student Name, Symbol Number, Contact Number)"
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+            <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Download Template</span>
           </button>
 
-          {/* Upload Excel */}
+          {/* Upload Student Info (CSV) */}
           <button
             type="button"
-            onClick={() => setExcelUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            title="Import marks from Excel spreadsheet"
+            disabled={isExpired}
+            onClick={() => setStudentUploadOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+            title={isExpired ? 'Account expired (read-only)' : 'Import student info from CSV'}
           >
             <UploadCloud className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
-            <span>Upload Marks</span>
+            <span>Upload Student Info</span>
           </button>
 
           {/* In-Browser Marks Table */}
@@ -238,6 +247,16 @@ export const SectionDetailView: React.FC<Props> = ({
           )}
         </div>
       </div>
+
+      {/* Account expired notice */}
+      {isExpired && (
+        <div className="bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-2xl p-4 flex items-center gap-3 text-rose-900 dark:text-rose-200 text-xs">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          <div>
+            <strong className="font-bold">Account Expired (Read-Only Mode):</strong> Your subscription trial has ended. You can view student profiles and marks, but student additions, edits, deletions, and uploads are disabled. Please contact the administrator.
+          </div>
+        </div>
+      )}
 
       {/* 100-student cap warning banner if at max limit */}
       {isFull && (
@@ -327,12 +346,13 @@ export const SectionDetailView: React.FC<Props> = ({
                       {/* Edit Student (no password needed) */}
                       <button
                         type="button"
+                        disabled={isExpired}
                         onClick={() => {
                           setSelectedStudentForEdit(student);
                           setStudentModalOpen(true);
                         }}
-                        className="p-2 min-w-[36px] min-h-[36px] text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
-                        title="Edit Student Information"
+                        className="p-2 min-w-[36px] min-h-[36px] text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
+                        title={isExpired ? 'Account expired (read-only)' : 'Edit Student Information'}
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
@@ -340,9 +360,10 @@ export const SectionDetailView: React.FC<Props> = ({
                       {/* Delete Student (prompts for current login password) */}
                       <button
                         type="button"
+                        disabled={isExpired}
                         onClick={() => setStudentToDelete(student)}
-                        className="p-2 min-w-[36px] min-h-[36px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
-                        title="Delete Student (Requires Password)"
+                        className="p-2 min-w-[36px] min-h-[36px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
+                        title={isExpired ? 'Account expired (read-only)' : 'Delete Student (Requires Password)'}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -373,12 +394,12 @@ export const SectionDetailView: React.FC<Props> = ({
         onClose={() => setProfileStudentId(null)}
       />
 
-      <ExcelUploadModal
-        isOpen={excelUploadOpen}
+      <StudentCsvUploadModal
+        isOpen={studentUploadOpen}
         sectionId={section.id}
         sectionName={section.name}
         className={currentClass.name}
-        onClose={() => setExcelUploadOpen(false)}
+        onClose={() => setStudentUploadOpen(false)}
         onSuccess={loadStudents}
       />
 

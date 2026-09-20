@@ -25,6 +25,7 @@ interface Props {
   setMobileOpen: (open: boolean) => void;
   onOpenCreateClass: () => void;
   onRefreshClasses?: () => Promise<void>;
+  isExpired?: boolean;
 }
 
 export const Sidebar: React.FC<Props> = ({
@@ -38,6 +39,7 @@ export const Sidebar: React.FC<Props> = ({
   setMobileOpen,
   onOpenCreateClass,
   onRefreshClasses,
+  isExpired = false,
 }) => {
   // Accordion expansion state per class ID
   const [expandedClasses, setExpandedClasses] = useState<Record<string, boolean>>({});
@@ -185,12 +187,15 @@ export const Sidebar: React.FC<Props> = ({
                 <div className="absolute right-0 top-full mt-1 w-48 bg-[#141C2B] border border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs">
                   <button
                     type="button"
+                    disabled={isExpired}
                     onClick={() => {
+                      if (isExpired) return;
                       setHeaderMenuOpen(false);
                       onOpenCreateClass();
                       setMobileOpen(false);
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer transition-colors"
+                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                    title={isExpired ? 'Account expired (read-only)' : undefined}
                   >
                     <Plus className="w-3.5 h-3.5 text-blue-400" />
                     <span>Create New Class</span>
@@ -231,11 +236,14 @@ export const Sidebar: React.FC<Props> = ({
               <p>No classes created yet.</p>
               <button
                 type="button"
+                disabled={isExpired}
                 onClick={() => {
+                  if (isExpired) return;
                   onOpenCreateClass();
                   setMobileOpen(false);
                 }}
-                className="mt-3 inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold cursor-pointer"
+                className="mt-3 inline-flex items-center gap-1.5 text-xs text-blue-400 hover:text-blue-300 font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                title={isExpired ? 'Account expired (read-only)' : undefined}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>Add your first class</span>
@@ -302,15 +310,20 @@ export const Sidebar: React.FC<Props> = ({
                         <div className="absolute right-0 top-full mt-1 w-40 bg-[#141C2B] border border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs">
                           <button
                             type="button"
-                            onClick={() => handleOpenRename(cls)}
-                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
+                            disabled={isExpired}
+                            onClick={() => {
+                              if (isExpired) return;
+                              handleOpenRename(cls);
+                            }}
+                            className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                            title={isExpired ? 'Account expired (read-only)' : undefined}
                           >
                             <Edit2 className="w-3.5 h-3.5 text-slate-400" />
                             <span>Rename Class</span>
                           </button>
                           <button
                             type="button"
-                            disabled={idx === 0}
+                            disabled={idx === 0 || isExpired}
                             onClick={() => handleMoveClass(idx, 'up')}
                             className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer disabled:opacity-30"
                           >
@@ -319,7 +332,7 @@ export const Sidebar: React.FC<Props> = ({
                           </button>
                           <button
                             type="button"
-                            disabled={idx === classes.length - 1}
+                            disabled={idx === classes.length - 1 || isExpired}
                             onClick={() => handleMoveClass(idx, 'down')}
                             className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer disabled:opacity-30"
                           >

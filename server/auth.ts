@@ -39,6 +39,9 @@ export interface JwtPayload {
   role: UserRole;
   status: UserStatus;
   tokenVersion?: number;
+  expiresAt?: string;
+  isExpired?: boolean;
+  daysRemaining?: number;
 }
 
 export async function hashPassword(password: string): Promise<string> {

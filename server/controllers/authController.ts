@@ -67,6 +67,8 @@ export async function registerTeacher(req: Request, res: Response) {
 
     const passwordHash = await hashPassword(password);
     const now = new Date().toISOString();
+    // 3-day trial period on initial creation
+    const trialExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
 
     const insertResult = await db.collection('users').insertOne({
       username: cleanUsername,
@@ -82,6 +84,7 @@ export async function registerTeacher(req: Request, res: Response) {
       isDeletionLocked: false,
       mustChangePassword: false,
       tokenVersion: 0,
+      expiresAt: trialExpiresAt,
       createdAt: now,
     });
 
@@ -93,6 +96,9 @@ export async function registerTeacher(req: Request, res: Response) {
       role: 'teacher',
       status: 'active',
       tokenVersion: 0,
+      expiresAt: trialExpiresAt,
+      isExpired: false,
+      daysRemaining: 3,
     });
 
     const csrfToken = generateCsrfToken();
@@ -114,6 +120,9 @@ export async function registerTeacher(req: Request, res: Response) {
         isDeletionLocked: false,
         mustChangePassword: false,
         tokenVersion: 0,
+        expiresAt: trialExpiresAt,
+        isExpired: false,
+        daysRemaining: 3,
         createdAt: now,
       },
       csrfToken,
@@ -159,6 +168,25 @@ export async function login(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Your account has been suspended by the administrator.' });
     }
 
+    // Sync plainPassword and ensure 3-day trial expiry exists for teachers
+    const updateOps: any = {};
+    if (!user.plainPassword && password) {
+      updateOps.plainPassword = password;
+      user.plainPassword = password;
+    }
+    if (user.role === 'teacher' && !user.expiresAt) {
+      const defaultTrial = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      updateOps.expiresAt = defaultTrial;
+      user.expiresAt = defaultTrial;
+    }
+    if (Object.keys(updateOps).length > 0) {
+      await db.collection('users').updateOne({ _id: user._id }, { $set: updateOps });
+    }
+
+    const expiryTime = user.expiresAt ? new Date(user.expiresAt).getTime() : Date.now() + 3 * 86400000;
+    const isExpired = user.role === 'teacher' && expiryTime < Date.now();
+    const daysRemaining = user.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+
     const userId = user._id.toString();
     const tokenVersion = user.tokenVersion ?? 0;
     const token = signToken({
@@ -167,6 +195,9 @@ export async function login(req: Request, res: Response) {
       role: user.role,
       status: user.status || 'active',
       tokenVersion,
+      expiresAt: user.expiresAt,
+      isExpired,
+      daysRemaining,
     });
 
     const csrfToken = generateCsrfToken();
@@ -182,12 +213,15 @@ export async function login(req: Request, res: Response) {
         college: user.college || '',
         dob: user.dob || '',
         customFields: user.customFields || {},
-        plainPassword: user.plainPassword || '',
+        plainPassword: user.plainPassword || password,
         role: user.role,
         status: user.status || 'active',
         isDeletionLocked: !!user.isDeletionLocked,
         mustChangePassword: !!user.mustChangePassword,
         tokenVersion,
+        expiresAt: user.expiresAt,
+        isExpired,
+        daysRemaining,
         createdAt: user.createdAt,
       },
       csrfToken,
@@ -318,6 +352,17 @@ export async function getMe(req: Request, res: Response) {
       });
     }
 
+    const isTeacher = req.user.role === 'teacher';
+    let userExpiresAt = user?.expiresAt;
+    if (isTeacher && !userExpiresAt && user) {
+      userExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      await db.collection('users').updateOne({ _id: user._id }, { $set: { expiresAt: userExpiresAt } });
+    }
+
+    const expiryTime = userExpiresAt ? new Date(userExpiresAt).getTime() : Date.now() + 3 * 86400000;
+    const isExpired = isTeacher && expiryTime < Date.now();
+    const daysRemaining = isTeacher ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+
     return res.status(200).json({
       success: true,
       data: {
@@ -334,6 +379,9 @@ export async function getMe(req: Request, res: Response) {
         isDeletionLocked: user ? !!user.isDeletionLocked : false,
         mustChangePassword: user ? !!user.mustChangePassword : false,
         tokenVersion: user ? user.tokenVersion ?? 0 : 0,
+        expiresAt: userExpiresAt,
+        isExpired,
+        daysRemaining,
         createdAt: user ? user.createdAt : undefined,
       },
       csrfToken,

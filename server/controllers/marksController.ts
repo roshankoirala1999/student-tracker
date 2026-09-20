@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { ObjectId } from 'mongodb';
-import ExcelJS from 'exceljs';
 import { getDatabase } from '../db.ts';
+import { parseCsv, generateCsv } from '../utils/csv.ts';
 
 export async function getSectionMarksMatrix(req: Request, res: Response) {
   const { sectionId } = req.params;
@@ -48,7 +48,6 @@ export async function getSectionMarksMatrix(req: Request, res: Response) {
           studentName: s.studentName,
           symbolNumber: s.symbolNumber,
           contactNumber: s.contactNumber || s.parentContact || '',
-          parentContact: s.contactNumber || s.parentContact || '',
         })),
         assignments: assignments.map((a) => ({
           id: a._id.toString(),
@@ -74,7 +73,11 @@ export async function updateSingleMark(req: Request, res: Response) {
   const { studentId, itemId, itemType, marksObtained } = req.body;
 
   if (!studentId || !itemId || !itemType) {
-    return res.status(400).json({ success: false, message: 'Missing required mark parameters.' });
+    return res.status(400).json({ success: false, message: 'studentId, itemId, and itemType are required.' });
+  }
+
+  if (itemType !== 'assignment' && itemType !== 'examination') {
+    return res.status(400).json({ success: false, message: 'itemType must be "assignment" or "examination".' });
   }
 
   let numericScore: number | null = null;
@@ -138,105 +141,27 @@ export async function updateSingleMark(req: Request, res: Response) {
   }
 }
 
-export async function exportSampleExcel(req: Request, res: Response) {
-  const { sectionId } = req.params;
-
-  try {
-    const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
-
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
-    const classId = section.classId;
-
-    const students = await db.collection('students')
-      .find({ sectionId })
-      .sort({ rollNumber: 1 })
-      .toArray();
-
-    const assignments = await db.collection('assignments')
-      .find({ classId })
-      .sort({ createdAt: 1 })
-      .toArray();
-
-    const examinations = await db.collection('examinations')
-      .find({ classId })
-      .sort({ createdAt: 1 })
-      .toArray();
-
-    const marks = await db.collection('marks').find({ sectionId }).toArray();
-    const markMap = new Map<string, number | null>();
-    marks.forEach((m) => markMap.set(`${m.studentId}_${m.itemId}`, m.marksObtained));
-
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Student Tracker';
-    workbook.created = new Date();
-
-    const worksheet = workbook.addWorksheet('Marks', {
-      views: [{ state: 'frozen', ySplit: 1 }]
-    });
-
-    // Define columns with clean standard definitions
-    const columns: Array<{ header: string; key: string; width: number }> = [
-      { header: 'Roll Number', key: 'rollNumber', width: 14 },
-      { header: 'Student Name', key: 'studentName', width: 28 },
-      { header: 'Symbol Number', key: 'symbolNumber', width: 18 },
-      { header: 'Contact Number', key: 'contactNumber', width: 20 },
-    ];
-
-    assignments.forEach((a) => {
-      columns.push({ header: a.name, key: `item_${a._id}`, width: 20 });
-    });
-
-    examinations.forEach((e) => {
-      columns.push({ header: e.name, key: `item_${e._id}`, width: 20 });
-    });
-
-    worksheet.columns = columns;
-
-    // Style header row with standard clean Calibri 11 bold
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { name: 'Calibri', size: 11, bold: true };
-    headerRow.alignment = { vertical: 'middle', horizontal: 'left' };
-    headerRow.height = 24;
-
-    // Add rows
-    for (const s of students) {
-      const rowData: Record<string, any> = {
-        rollNumber: s.rollNumber,
-        studentName: s.studentName || '',
-        symbolNumber: s.symbolNumber || '',
-        contactNumber: s.contactNumber || s.parentContact || '',
-      };
-
-      for (const a of assignments) {
-        const score = markMap.get(`${s._id.toString()}_${a._id.toString()}`);
-        rowData[`item_${a._id}`] = score !== null && score !== undefined ? score : '';
-      }
-
-      for (const e of examinations) {
-        const score = markMap.get(`${s._id.toString()}_${e._id.toString()}`);
-        rowData[`item_${e._id}`] = score !== null && score !== undefined ? score : '';
-      }
-
-      const row = worksheet.addRow(rowData);
-      row.font = { name: 'Calibri', size: 11 };
-      row.alignment = { vertical: 'middle' };
-    }
-
-    const excelBuffer = await workbook.xlsx.writeBuffer();
-    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Marks.xlsx`;
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(Buffer.from(excelBuffer));
-  } catch (err: any) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+// Helper to decode CSV text from request body (raw csv string or base64 data url)
+function extractCsvText(body: any): string {
+  if (typeof body.csvContent === 'string') {
+    return body.csvContent;
   }
+  if (typeof body.fileData === 'string') {
+    const data = body.fileData;
+    if (data.includes('base64,')) {
+      const base64Part = data.split('base64,')[1];
+      return Buffer.from(base64Part, 'base64').toString('utf-8');
+    }
+    return data;
+  }
+  return '';
 }
 
-export async function exportStudentRosterExcel(req: Request, res: Response) {
+/**
+ * 1. STUDENT INFO CSV EXPORT (Section view)
+ * Columns: Roll Number, Student Name, Symbol Number, Contact Number
+ */
+export async function exportStudentRosterCsv(req: Request, res: Response) {
   const { sectionId } = req.params;
 
   try {
@@ -251,101 +176,57 @@ export async function exportStudentRosterExcel(req: Request, res: Response) {
       .sort({ rollNumber: 1 })
       .toArray();
 
-    const workbook = new ExcelJS.Workbook();
-    workbook.creator = 'Student Tracker';
-    workbook.created = new Date();
+    const headers = ['Roll Number', 'Student Name', 'Symbol Number', 'Contact Number'];
+    let rows: (string | number)[][] = [];
 
-    const worksheet = workbook.addWorksheet('Student Roster', {
-      views: [{ state: 'frozen', ySplit: 1 }]
-    });
-
-    worksheet.columns = [
-      { header: 'Roll Number', key: 'rollNumber', width: 14 },
-      { header: 'Student Name', key: 'studentName', width: 28 },
-      { header: 'Symbol Number', key: 'symbolNumber', width: 18 },
-      { header: 'Contact Number', key: 'contactNumber', width: 20 },
-    ];
-
-    const headerRow = worksheet.getRow(1);
-    headerRow.font = { name: 'Calibri', size: 11, bold: true };
-    headerRow.alignment = { vertical: 'middle', horizontal: 'left' };
-    headerRow.height = 24;
-
-    for (const s of students) {
-      const row = worksheet.addRow({
-        rollNumber: s.rollNumber,
-        studentName: s.studentName || '',
-        symbolNumber: s.symbolNumber || '',
-        contactNumber: s.contactNumber || s.parentContact || '',
-      });
-      row.font = { name: 'Calibri', size: 11 };
-      row.alignment = { vertical: 'middle' };
-    }
-
-    const excelBuffer = await workbook.xlsx.writeBuffer();
-    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Student_Roster.xlsx`;
-
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(Buffer.from(excelBuffer));
-  } catch (err: any) {
-    console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to export student roster.' });
-  }
-}
-
-export async function importStudentRosterExcel(req: Request, res: Response) {
-  const { sectionId } = req.params;
-  const { fileData } = req.body;
-
-  if (!fileData) {
-    return res.status(400).json({ success: false, message: 'Excel fileData is required.' });
-  }
-
-  try {
-    const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
-
-    let buffer: Buffer;
-    if (typeof fileData === 'string') {
-      const base64Clean = fileData.includes('base64,') ? fileData.split('base64,')[1] : fileData;
-      buffer = Buffer.from(base64Clean, 'base64');
-    } else if (Buffer.isBuffer(fileData)) {
-      buffer = fileData;
+    if (students.length > 0) {
+      rows = students.map((s) => [
+        s.rollNumber,
+        s.studentName || '',
+        s.symbolNumber || '',
+        s.contactNumber || s.parentContact || '',
+      ]);
     } else {
-      return res.status(400).json({ success: false, message: 'Invalid Excel file format.' });
+      // Provide clean sample rows if section has no enrolled students yet
+      rows = [
+        [1, 'John Doe', 'SYM-1001', '9841000001'],
+        [2, 'Jane Smith', 'SYM-1002', '9841000002'],
+      ];
     }
 
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as any);
+    const csvContent = generateCsv(headers, rows);
+    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Student_Info_Template.csv`;
 
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet || worksheet.rowCount === 0) {
-      return res.status(400).json({ success: false, message: 'Excel workbook is empty.' });
-    }
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csvContent);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to export student info CSV.' });
+  }
+}
 
-    const rawRows: any[][] = [];
-    worksheet.eachRow({ includeEmpty: false }, (row) => {
-      const rowValues: any[] = [];
-      const colCount = Math.max(worksheet.columnCount || 0, row.cellCount || 0, 4);
-      for (let c = 1; c <= colCount; c++) {
-        const cell = row.getCell(c);
-        let val = cell.value;
-        if (val && typeof val === 'object') {
-          if ('result' in (val as any)) {
-            val = (val as any).result;
-          } else if ('text' in (val as any)) {
-            val = (val as any).text;
-          }
-        }
-        rowValues.push(val !== null && val !== undefined ? val : '');
-      }
-      rawRows.push(rowValues);
-    });
+/**
+ * 2. STUDENT INFO CSV IMPORT (Section view)
+ * Strictly imports student roster info (Roll Number, Student Name, Symbol Number, Contact Number).
+ * No marks logic here.
+ */
+export async function importStudentRosterCsv(req: Request, res: Response) {
+  const { sectionId } = req.params;
+  const csvText = extractCsvText(req.body);
 
+  if (!csvText || csvText.trim().length === 0) {
+    return res.status(400).json({ success: false, message: 'CSV file content is required.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    const rawRows = parseCsv(csvText);
     if (rawRows.length < 2) {
-      return res.status(400).json({ success: false, message: 'Excel sheet has no student data rows.' });
+      return res.status(400).json({ success: false, message: 'CSV file contains no student data rows.' });
     }
 
     const errors: string[] = [];
@@ -362,21 +243,21 @@ export async function importStudentRosterExcel(req: Request, res: Response) {
     for (let r = 1; r < rawRows.length; r++) {
       const row = rawRows[r];
       const rowNum = r + 1;
-      if (!row || row.every((c: any) => c === '' || c === null || c === undefined)) continue;
+      if (!row || row.every((c) => c === '')) continue;
 
       const rollVal = row[0];
-      const nameVal = row[1] !== undefined ? String(row[1]).trim() : '';
-      const symbolVal = row[2] !== undefined ? String(row[2]).trim() : '';
-      const phoneVal = row[3] !== undefined ? String(row[3]).trim() : '';
+      const nameVal = row[1] !== undefined ? row[1].trim() : '';
+      const symbolVal = row[2] !== undefined ? row[2].trim() : '';
+      const phoneVal = row[3] !== undefined ? row[3].trim() : '';
 
       const numRoll = Number(rollVal);
       if (isNaN(numRoll) || !Number.isInteger(numRoll) || numRoll <= 0) {
-        errors.push(`Row ${rowNum}: Invalid Roll Number "${rollVal}". Must be positive integer.`);
+        errors.push(`Row ${rowNum}: Invalid Roll Number "${rollVal}". Must be a positive integer.`);
         continue;
       }
 
       if (seenRolls.has(numRoll)) {
-        errors.push(`Row ${rowNum}: Duplicate Roll Number ${numRoll} found in uploaded sheet.`);
+        errors.push(`Row ${rowNum}: Duplicate Roll Number ${numRoll} found in uploaded file.`);
         continue;
       }
       seenRolls.add(numRoll);
@@ -393,7 +274,7 @@ export async function importStudentRosterExcel(req: Request, res: Response) {
 
       const lowerSym = symbolVal.toLowerCase();
       if (seenSymbols.has(lowerSym)) {
-        errors.push(`Row ${rowNum}: Duplicate Symbol Number "${symbolVal}" found in uploaded sheet.`);
+        errors.push(`Row ${rowNum}: Duplicate Symbol Number "${symbolVal}" found in uploaded file.`);
         continue;
       }
       seenSymbols.add(lowerSym);
@@ -409,7 +290,7 @@ export async function importStudentRosterExcel(req: Request, res: Response) {
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed for student roster upload.',
+        message: 'Validation failed for student info CSV.',
         errors,
       });
     }
@@ -427,7 +308,7 @@ export async function importStudentRosterExcel(req: Request, res: Response) {
     if (existingStudents.length + newCount > 100) {
       return res.status(400).json({
         success: false,
-        message: `Importing these students would exceed the limit of 100 students per section (Current: ${existingStudents.length}, New: ${newCount}).`,
+        message: `Importing these students would exceed the section cap of 100 students (Current: ${existingStudents.length}, New: ${newCount}).`,
       });
     }
 
@@ -471,16 +352,91 @@ export async function importStudentRosterExcel(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to import student roster.' });
+    return res.status(500).json({ success: false, message: 'Failed to import student info CSV.' });
   }
 }
 
-export async function importMarksExcel(req: Request, res: Response) {
+/**
+ * 3. MARKS CSV EXPORT (Marks section view)
+ * "Columns should be Roll std name symbol only all column which is visiable at the instant"
+ * "Download template means current table download"
+ * Columns: Roll Number, Student Name, Symbol Number + [All Assignment and Exam Columns]
+ * Note: Contact Number and Total Marks are REMOVED!
+ */
+export async function exportMarksCsv(req: Request, res: Response) {
   const { sectionId } = req.params;
-  const { fileData } = req.body;
 
-  if (!fileData) {
-    return res.status(400).json({ success: false, message: 'Excel fileData is required.' });
+  try {
+    const db = getDatabase();
+    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
+    const classId = section.classId;
+
+    const students = await db.collection('students')
+      .find({ sectionId })
+      .sort({ rollNumber: 1 })
+      .toArray();
+
+    const assignments = await db.collection('assignments')
+      .find({ classId })
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    const examinations = await db.collection('examinations')
+      .find({ classId })
+      .sort({ createdAt: 1 })
+      .toArray();
+
+    const marks = await db.collection('marks').find({ sectionId }).toArray();
+    const markMap = new Map<string, number | null>();
+    marks.forEach((m) => markMap.set(`${m.studentId}_${m.itemId}`, m.marksObtained));
+
+    // Columns: Roll Number, Student Name, Symbol Number, [Assignments...], [Examinations...]
+    const headers = ['Roll Number', 'Student Name', 'Symbol Number'];
+    assignments.forEach((a) => headers.push(a.name));
+    examinations.forEach((e) => headers.push(e.name));
+
+    const rows = students.map((s) => {
+      const row: (string | number)[] = [s.rollNumber, s.studentName || '', s.symbolNumber || ''];
+
+      assignments.forEach((a) => {
+        const score = markMap.get(`${s._id.toString()}_${a._id.toString()}`);
+        row.push(score !== null && score !== undefined ? score : '');
+      });
+
+      examinations.forEach((e) => {
+        const score = markMap.get(`${s._id.toString()}_${e._id.toString()}`);
+        row.push(score !== null && score !== undefined ? score : '');
+      });
+
+      return row;
+    });
+
+    const csvContent = generateCsv(headers, rows);
+    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Marks.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(csvContent);
+  } catch (err: any) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to export marks CSV.' });
+  }
+}
+
+/**
+ * 4. MARKS CSV IMPORT (Marks section view)
+ * "Download template means current table download and upload means uploading after editing"
+ * "Remember student name roll number and sym no here uploaded must match the student rec or dont take file if name sym no is inc or decreased or edited"
+ */
+export async function importMarksCsv(req: Request, res: Response) {
+  const { sectionId } = req.params;
+  const csvText = extractCsvText(req.body);
+
+  if (!csvText || csvText.trim().length === 0) {
+    return res.status(400).json({ success: false, message: 'Marks CSV file content is required.' });
   }
 
   try {
@@ -490,79 +446,62 @@ export async function importMarksExcel(req: Request, res: Response) {
 
     const classId = section.classId;
 
-    // Load existing students in this section for strict identity matching
-    const existingStudents = await db.collection('students').find({ sectionId }).toArray();
-    const studentByRoll = new Map<number, any>();
-
-    existingStudents.forEach((s) => {
-      studentByRoll.set(s.rollNumber, s);
-    });
-
-    // Load dynamic items for this class
-    const assignments = await db.collection('assignments').find({ classId }).toArray();
-    const examinations = await db.collection('examinations').find({ classId }).toArray();
-
-    const itemByName = new Map<string, { id: string; type: 'assignment' | 'examination'; maxMarks: number }>();
-    assignments.forEach((a) => itemByName.set(a.name.trim().toLowerCase(), { id: a._id.toString(), type: 'assignment', maxMarks: a.maxMarks }));
-    examinations.forEach((e) => itemByName.set(e.name.trim().toLowerCase(), { id: e._id.toString(), type: 'examination', maxMarks: e.maxMarks }));
-
-    let buffer: Buffer;
-    if (typeof fileData === 'string') {
-      const base64Clean = fileData.includes('base64,') ? fileData.split('base64,')[1] : fileData;
-      buffer = Buffer.from(base64Clean, 'base64');
-    } else if (Buffer.isBuffer(fileData)) {
-      buffer = fileData;
-    } else {
-      return res.status(400).json({ success: false, message: 'Invalid Excel file format.' });
-    }
-
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(buffer as any);
-
-    const worksheet = workbook.worksheets[0];
-    if (!worksheet || worksheet.rowCount === 0) {
-      return res.status(400).json({ success: false, message: 'Excel workbook contains no sheets or is empty.' });
-    }
-
-    const rawRows: any[][] = [];
-    worksheet.eachRow({ includeEmpty: false }, (row) => {
-      const rowValues: any[] = [];
-      const colCount = Math.max(worksheet.columnCount || 0, row.cellCount || 0, 10);
-      for (let c = 1; c <= colCount; c++) {
-        const cell = row.getCell(c);
-        let val = cell.value;
-        if (val && typeof val === 'object') {
-          if ('result' in (val as any)) {
-            val = (val as any).result;
-          } else if ('text' in (val as any)) {
-            val = (val as any).text;
-          }
-        }
-        rowValues.push(val !== null && val !== undefined ? val : '');
-      }
-      rawRows.push(rowValues);
-    });
-
-    if (rawRows.length < 2) {
-      return res.status(400).json({ success: false, message: 'Excel sheet is empty or missing data rows.' });
-    }
-
-    const headerRow: string[] = (rawRows[0] || []).map((h: any) => String(h).trim());
-
-    if (headerRow.length < 4) {
+    // Load enrolled students in this section
+    const existingStudents = await db.collection('students').find({ sectionId }).sort({ rollNumber: 1 }).toArray();
+    if (existingStudents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: "Excel is missing required identity columns: 'Roll Number', 'Student Name', 'Symbol Number', 'Contact Number'.",
+        message: 'This section has no enrolled students. Please add or upload students first before uploading marks.',
       });
     }
 
-    // Map assessment columns (index >= 4)
-    const columnMappings: Array<{ colIdx: number; name: string; item: { id: string; type: 'assignment' | 'examination'; maxMarks: number } }> = [];
+    const studentByRoll = new Map<number, any>();
+    existingStudents.forEach((s) => studentByRoll.set(s.rollNumber, s));
 
-    for (let i = 4; i < headerRow.length; i++) {
-      const colName = headerRow[i];
+    // Load dynamic class assignments and examinations
+    const assignments = await db.collection('assignments').find({ classId }).toArray();
+    const examinations = await db.collection('examinations').find({ classId }).toArray();
+
+    const itemByName = new Map<string, { id: string; type: 'assignment' | 'examination'; maxMarks: number; name: string }>();
+    assignments.forEach((a) => itemByName.set(a.name.trim().toLowerCase(), { id: a._id.toString(), type: 'assignment', maxMarks: a.maxMarks, name: a.name }));
+    examinations.forEach((e) => itemByName.set(e.name.trim().toLowerCase(), { id: e._id.toString(), type: 'examination', maxMarks: e.maxMarks, name: e.name }));
+
+    const rawRows = parseCsv(csvText);
+    if (rawRows.length < 2) {
+      return res.status(400).json({ success: false, message: 'Uploaded CSV contains no student marks rows.' });
+    }
+
+    const headerRow = rawRows[0];
+    if (headerRow.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: "CSV header is missing required columns: 'Roll Number', 'Student Name', 'Symbol Number'.",
+      });
+    }
+
+    // Filter out blank rows
+    const dataRows = rawRows.slice(1).filter((r) => r && r.some((c) => c !== ''));
+
+    // 1. Strict Count Check: Row count must EXACTLY match the number of enrolled students in this section!
+    if (dataRows.length !== existingStudents.length) {
+      return res.status(400).json({
+        success: false,
+        message: `Upload rejected: Student count mismatch. File contains ${dataRows.length} student rows, but this section has ${existingStudents.length} enrolled students. Student count cannot be increased or decreased in marks upload.`,
+      });
+    }
+
+    // Map assessment columns starting at index 3
+    const columnMappings: Array<{ colIdx: number; name: string; item: { id: string; type: 'assignment' | 'examination'; maxMarks: number; name: string } }> = [];
+
+    for (let i = 3; i < headerRow.length; i++) {
+      const colName = headerRow[i]?.trim();
       if (!colName) continue;
-      const match = itemByName.get(colName.toLowerCase());
+      // If header is accidentally Total or Contact, ignore or warn
+      const lower = colName.toLowerCase();
+      if (lower === 'total' || lower === 'total marks' || lower === 'contact' || lower === 'contact number') {
+        continue;
+      }
+      const match = itemByName.get(lower);
       if (match) {
         columnMappings.push({ colIdx: i, name: colName, item: match });
       } else {
@@ -575,17 +514,16 @@ export async function importMarksExcel(req: Request, res: Response) {
 
     const errors: string[] = [];
     const marksToUpsert: any[] = [];
+    const seenRollsInFile = new Set<number>();
 
-    for (let rowIdx = 1; rowIdx < rawRows.length; rowIdx++) {
-      const row = rawRows[rowIdx];
-      const rowNum = rowIdx + 1;
-
-      if (!row || row.length === 0 || row.every((c: any) => c === '' || c === null || c === undefined)) {
-        continue;
-      }
+    // 2. Strict Student Identity Check for Every Row
+    for (let rowIdx = 0; rowIdx < dataRows.length; rowIdx++) {
+      const row = dataRows[rowIdx];
+      const rowNum = rowIdx + 2;
 
       const rollVal = row[0];
-      const symbolVal = row[2] !== undefined ? String(row[2]).trim() : '';
+      const nameVal = row[1] !== undefined ? row[1].trim() : '';
+      const symbolVal = row[2] !== undefined ? row[2].trim() : '';
 
       const numericRoll = Number(rollVal);
       if (isNaN(numericRoll)) {
@@ -593,33 +531,58 @@ export async function importMarksExcel(req: Request, res: Response) {
         continue;
       }
 
+      if (seenRollsInFile.has(numericRoll)) {
+        errors.push(`Row ${rowNum}: Duplicate Roll Number ${numericRoll} found in marks file.`);
+        continue;
+      }
+      seenRollsInFile.add(numericRoll);
+
       const student = studentByRoll.get(numericRoll);
       if (!student) {
-        errors.push(`Row ${rowNum}: Student with Roll Number ${numericRoll} does not exist in this section. Excel cannot create new students.`);
+        errors.push(`Row ${rowNum}: Student with Roll Number ${numericRoll} does not exist in this section.`);
         continue;
       }
 
-      if (symbolVal && student.symbolNumber.trim().toLowerCase() !== symbolVal.toLowerCase()) {
-        errors.push(`Row ${rowNum}: Symbol Number mismatch for Roll ${numericRoll}. Expected "${student.symbolNumber}", found "${symbolVal}".`);
+      // Check student name
+      if (student.studentName.trim().toLowerCase() !== nameVal.toLowerCase()) {
+        errors.push(`Row ${rowNum}: Student name mismatch for Roll #${numericRoll}. Expected "${student.studentName}", found "${nameVal}". Student names cannot be altered during marks upload.`);
         continue;
       }
 
+      // Check symbol number
+      if (student.symbolNumber.trim().toLowerCase() !== symbolVal.toLowerCase()) {
+        errors.push(`Row ${rowNum}: Symbol number mismatch for Roll #${numericRoll}. Expected "${student.symbolNumber}", found "${symbolVal}". Symbol numbers cannot be altered during marks upload.`);
+        continue;
+      }
+
+      // Validate scores for each assessment column
       for (const col of columnMappings) {
         if (col.colIdx < row.length) {
-          const rawMark = row[col.colIdx];
-          if (rawMark === '' || rawMark === null || rawMark === undefined) {
+          const rawMark = row[col.colIdx]?.trim();
+          if (rawMark === '' || rawMark === undefined || rawMark === null) {
+            // Unentered score -> set to null or leave unentered
+            marksToUpsert.push({
+              teacherId: section.teacherId,
+              classId: section.classId,
+              sectionId,
+              studentId: student._id.toString(),
+              itemType: col.item.type,
+              itemId: col.item.id,
+              marksObtained: null,
+              updatedAt: new Date().toISOString(),
+            });
             continue;
           }
 
           const score = Number(rawMark);
           if (isNaN(score) || score < 0) {
-            errors.push(`Row ${rowNum} (${student.studentName}): Invalid marks "${rawMark}" for "${col.name}".`);
+            errors.push(`Row ${rowNum} (${student.studentName}): Invalid mark score "${rawMark}" for "${col.name}". Must be a non-negative number.`);
             continue;
           }
 
           if (score > col.item.maxMarks) {
             errors.push(
-              `Row ${rowNum} (${student.studentName}): Marks ${score} exceed maximum allowed marks (${col.item.maxMarks}) for "${col.name}".`
+              `Row ${rowNum} (${student.studentName}): Mark ${score} exceeds maximum allowed marks (${col.item.maxMarks}) for "${col.name}".`
             );
             continue;
           }
@@ -641,7 +604,7 @@ export async function importMarksExcel(req: Request, res: Response) {
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Excel validation failed. No marks were imported.',
+        message: 'Marks CSV validation failed. No marks were saved.',
         errors,
       });
     }
@@ -660,7 +623,7 @@ export async function importMarksExcel(req: Request, res: Response) {
 
     return res.json({
       success: true,
-      message: `Excel marks imported successfully. Updated ${marksToUpsert.length} mark record(s).`,
+      message: `Marks successfully imported for ${dataRows.length} students. Updated ${marksToUpsert.length} assessment record(s).`,
       recordsCount: marksToUpsert.length,
     });
   } catch (err: any) {
@@ -668,3 +631,9 @@ export async function importMarksExcel(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 }
+
+// Backwards-compatible aliases pointing to the new CSV implementations
+export const exportSampleExcel = exportMarksCsv;
+export const importMarksExcel = importMarksCsv;
+export const exportStudentRosterExcel = exportStudentRosterCsv;
+export const importStudentRosterExcel = importStudentRosterCsv;

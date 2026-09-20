@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Menu, GraduationCap, Plus, BookOpen } from 'lucide-react';
+import { Menu, GraduationCap, Plus, BookOpen, AlertTriangle, Clock } from 'lucide-react';
 import { AuthProvider, useAuth } from './context/AuthContext.tsx';
 import { ThemeProvider } from './context/ThemeContext.tsx';
 import { AuthPage } from './components/auth/AuthPage.tsx';
@@ -17,6 +17,7 @@ import { apiRequest } from './api/client.ts';
 const MainApp: React.FC = () => {
   const { user, loading, dbConnected, dbError, checkAuth } = useAuth();
   const isAdmin = user?.role === 'master_admin' || user?.role === 'administrator';
+  const isExpired = !isAdmin && !!user?.isExpired;
 
   const [viewMode, setViewMode] = useState<'app' | 'admin'>('app');
   const [classes, setClasses] = useState<ClassItem[]>([]);
@@ -114,6 +115,40 @@ const MainApp: React.FC = () => {
         onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
       />
 
+      {/* Global Big Red Box for Expired Teacher Account */}
+      {isExpired && (
+        <div className="bg-red-600 dark:bg-red-700 text-white px-4 sm:px-6 py-4 shadow-lg border-b-2 border-red-800 flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left z-30">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-white/20 rounded-xl shrink-0">
+              <AlertTriangle className="w-6 h-6 text-white animate-pulse" />
+            </div>
+            <div>
+              <div className="font-extrabold text-sm sm:text-base tracking-wide uppercase">
+                Account is Expired
+              </div>
+              <div className="text-xs sm:text-sm text-red-100 font-medium">
+                Your account is expired, contact administrator to reactivate editing access. You may still view your students, sections, and marks.
+              </div>
+            </div>
+          </div>
+          <div className="px-3.5 py-1.5 bg-black/20 backdrop-blur-xs rounded-xl text-xs font-bold uppercase tracking-wider text-red-100 shrink-0">
+            Read-Only Mode
+          </div>
+        </div>
+      )}
+
+      {/* Trial Account Warning (<= 3 days remaining) */}
+      {!isAdmin && user && !isExpired && user.daysRemaining !== undefined && user.daysRemaining <= 3 && (
+        <div className="bg-amber-500 dark:bg-amber-600 text-amber-950 px-4 sm:px-6 py-2.5 border-b border-amber-600 flex items-center justify-between gap-3 text-xs font-semibold z-20">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-amber-950 shrink-0" />
+            <span>
+              Trial Account Warning: You have {user.daysRemaining} day{user.daysRemaining === 1 ? '' : 's'} remaining before your account expires.
+            </span>
+          </div>
+        </div>
+      )}
+
       {viewMode === 'admin' ? (
         <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1">
           <MasterAdminView />
@@ -138,6 +173,7 @@ const MainApp: React.FC = () => {
             setMobileOpen={setMobileSidebarOpen}
             onOpenCreateClass={() => setCreateClassModalOpen(true)}
             onRefreshClasses={loadClasses}
+            isExpired={isExpired}
           />
 
           {/* Main Content Area */}
@@ -155,8 +191,10 @@ const MainApp: React.FC = () => {
 
               <button
                 type="button"
+                disabled={isExpired}
                 onClick={() => setCreateClassModalOpen(true)}
-                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
+                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
+                title={isExpired ? 'Account expired (read-only)' : 'New Class'}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Class</span>
@@ -208,8 +246,10 @@ const MainApp: React.FC = () => {
                 </p>
                 <button
                   type="button"
+                  disabled={isExpired}
                   onClick={() => setCreateClassModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-xs"
+                  title={isExpired ? 'Account expired (read-only)' : 'Create New Class'}
                 >
                   <Plus className="w-4 h-4" />
                   <span>Create New Class</span>

@@ -98,15 +98,19 @@ api.put('/students/:studentId', requireTeacher, studentCtrl.updateStudent);
 api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent); // Sensitive: requires password
 api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
 
-// 6b. Students Excel Roster
+// 6b. Students CSV & Roster (Student Info)
+api.get('/sections/:sectionId/students/csv-template', verifySectionOwnership, marksCtrl.exportStudentRosterCsv);
+api.post('/sections/:sectionId/students/csv-import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterCsv);
 api.get('/sections/:sectionId/students/excel/export', verifySectionOwnership, marksCtrl.exportStudentRosterExcel);
 api.post('/sections/:sectionId/students/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterExcel);
 
-// 7. Marks & Dynamic Excel
+// 7. Marks CSV & Dynamic Grid
 api.get('/sections/:sectionId/marks', verifySectionOwnership, marksCtrl.getSectionMarksMatrix);
 api.post('/sections/:sectionId/marks/single', requireTeacher, verifySectionOwnership, marksCtrl.updateSingleMark);
+api.get('/sections/:sectionId/marks/csv-template', verifySectionOwnership, marksCtrl.exportMarksCsv);
+api.post('/sections/:sectionId/marks/csv-import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksCsv);
 api.get('/sections/:sectionId/excel/sample', verifySectionOwnership, marksCtrl.exportSampleExcel);
-api.post('/sections/:sectionId/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksExcel); // Strictly Marks Only
+api.post('/sections/:sectionId/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksExcel);
 
 // 8. Attendance
 api.get('/sections/:sectionId/attendance', verifySectionOwnership, attendCtrl.getAttendanceMetaAndHistory);
@@ -119,6 +123,7 @@ api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
 api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
 api.patch('/admin/teachers/:teacherId/status', requireMasterAdmin, adminCtrl.updateTeacherStatus);
 api.patch('/admin/teachers/:teacherId/profile', requireMasterAdmin, adminCtrl.updateTeacherProfileByAdmin);
+api.patch('/admin/teachers/:teacherId/expiry', requireMasterAdmin, adminCtrl.updateTeacherExpiry);
 api.patch('/admin/teachers/:teacherId/lock-deletion', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
 api.patch('/admin/teachers/:teacherId/deletion-lock', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);
 api.patch('/admin/teachers/:teacherId/password', requireMasterAdmin, adminCtrl.editTeacherPassword);
