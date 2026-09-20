@@ -288,9 +288,9 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
               <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold">Trial Access Ending Soon ({daysRemaining} Day{daysRemaining === 1 ? '' : 's'} Remaining)</div>
+                  <div className="font-bold">{daysRemaining} Day{daysRemaining === 1 ? '' : 's'} Remaining</div>
                   <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
-                    Your trial period will expire soon. Please contact your master administrator to extend your account access before it transitions into read-only mode.
+                    Your account access will expire in {daysRemaining} day{daysRemaining === 1 ? '' : 's'}. Kindly contact your administrator to renew or extend access before it transitions into read-only mode.
                   </div>
                 </div>
               </div>
@@ -313,8 +313,8 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
           <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Institutional Identity</span>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 italic">
-                {isNameLocked ? 'Full Name Locked (Editable once only)' : 'Full Name editable 1 time'}
+              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                Managed by administrator
               </span>
             </div>
 
@@ -324,7 +324,7 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-1">
                   <span>Full Name *</span>
                   {isNameLocked ? (
-                    <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Locked</span>
+                    <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Managed by admin</span>
                   ) : (
                     <span className="text-[10px] text-amber-600 font-normal">Edit 1x only</span>
                   )}
@@ -358,7 +358,9 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Locked</span>
                 </label>
                 <div className="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <span>{user.phoneNumber || '—'}</span>
+                  <span className={user.phoneNumber ? 'font-mono' : 'text-slate-400 italic'}>
+                    {user.phoneNumber || 'Not configured'}
+                  </span>
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
                 </div>
                 <span className="text-[10px] text-slate-400 mt-1 block">

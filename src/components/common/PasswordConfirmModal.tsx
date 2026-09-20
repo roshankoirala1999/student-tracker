@@ -17,7 +17,7 @@ export const PasswordConfirmModal: React.FC<Props> = ({
   title,
   description,
   confirmButtonText = 'Confirm',
-  isDestructive = true,
+  isDestructive = false,
   onClose,
   onConfirm,
   children,

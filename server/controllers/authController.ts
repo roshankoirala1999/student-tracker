@@ -67,8 +67,8 @@ export async function registerTeacher(req: Request, res: Response) {
 
     const passwordHash = await hashPassword(password);
     const now = new Date().toISOString();
-    // 3-day trial period on initial creation
-    const trialExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    // 7-day default access period on initial creation
+    const trialExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
     const insertResult = await db.collection('users').insertOne({
       username: cleanUsername,
@@ -98,7 +98,7 @@ export async function registerTeacher(req: Request, res: Response) {
       tokenVersion: 0,
       expiresAt: trialExpiresAt,
       isExpired: false,
-      daysRemaining: 3,
+      daysRemaining: 7,
     });
 
     const csrfToken = generateCsrfToken();
@@ -355,11 +355,11 @@ export async function getMe(req: Request, res: Response) {
     const isTeacher = req.user.role === 'teacher';
     let userExpiresAt = user?.expiresAt;
     if (isTeacher && !userExpiresAt && user) {
-      userExpiresAt = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      userExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       await db.collection('users').updateOne({ _id: user._id }, { $set: { expiresAt: userExpiresAt } });
     }
 
-    const expiryTime = userExpiresAt ? new Date(userExpiresAt).getTime() : Date.now() + 3 * 86400000;
+    const expiryTime = userExpiresAt ? new Date(userExpiresAt).getTime() : Date.now() + 7 * 86400000;
     const isExpired = isTeacher && expiryTime < Date.now();
     const daysRemaining = isTeacher ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
@@ -523,7 +523,7 @@ export async function updateTeacherProfile(req: Request, res: Response) {
     const updatedUser = await db.collection('users').findOne({ _id: user._id });
 
     // Recompute compulsory completeness
-    const expiryTime = updatedUser?.expiresAt ? new Date(updatedUser.expiresAt).getTime() : Date.now() + 3 * 86400000;
+    const expiryTime = updatedUser?.expiresAt ? new Date(updatedUser.expiresAt).getTime() : Date.now() + 7 * 86400000;
     const isExpired = updatedUser?.role === 'teacher' && expiryTime < Date.now();
     const daysRemaining = updatedUser?.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 

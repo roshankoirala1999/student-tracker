@@ -482,7 +482,7 @@ export const MasterAdminView: React.FC = () => {
                               ? 'bg-amber-50 dark:bg-amber-950/60 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 hover:bg-amber-100'
                               : 'bg-emerald-50 dark:bg-emerald-950/60 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100'
                           }`}
-                          title="Click to manage account trial and expiration days"
+                          title="Click to manage account expiration days"
                         >
                           <Clock className="w-3 h-3" />
                           <span>

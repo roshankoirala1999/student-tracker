@@ -253,7 +253,7 @@ export const SectionDetailView: React.FC<Props> = ({
         <div className="bg-rose-50 dark:bg-rose-950/50 border border-rose-200 dark:border-rose-900 rounded-2xl p-4 flex items-center gap-3 text-rose-900 dark:text-rose-200 text-xs">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <div>
-            <strong className="font-bold">Account Expired (Read-Only Mode):</strong> Your subscription trial has ended. You can view student profiles and marks, but student additions, edits, deletions, and uploads are disabled. Please contact the administrator.
+            <strong className="font-bold">Account Expired (Read-Only Mode):</strong> Your account access has expired. You can view student profiles and marks, but student additions, edits, deletions, and uploads are disabled. Please contact the administrator to renew access.
           </div>
         </div>
       )}

@@ -34,7 +34,7 @@ export async function listAllTeachers(req: Request, res: Response) {
     studentCounts.forEach((s) => studentCountMap.set(s._id, s.count));
 
     const formatted = teachers.map((t) => {
-      const expiryTime = t.expiresAt ? new Date(t.expiresAt).getTime() : Date.now() + 3 * 86400000;
+      const expiryTime = t.expiresAt ? new Date(t.expiresAt).getTime() : Date.now() + 7 * 86400000;
       const isExpired = expiryTime < Date.now();
       const daysRemaining = Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24));
 

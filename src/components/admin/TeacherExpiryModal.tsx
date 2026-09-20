@@ -208,8 +208,8 @@ export const TeacherExpiryModal: React.FC<Props> = ({
             </label>
             <div className="grid grid-cols-3 gap-2">
               {[
-                { label: '+3 Days (Trial)', val: 3 },
-                { label: '+7 Days', val: 7 },
+                { label: '+7 Days (Default)', val: 7 },
+                { label: '+14 Days (2 Wks)', val: 14 },
                 { label: '+30 Days (1 Mo)', val: 30 },
                 { label: '+60 Days', val: 60 },
                 { label: '+90 Days (3 Mo)', val: 90 },

@@ -43,6 +43,7 @@ export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
         id: h._id.toString(),
         dayNumber: h.dayNumber,
         submissionDate: h.submissionDate,
+        comment: h.comment || '',
         presentCount,
         absentCount,
         totalStudents: records.length,
@@ -69,7 +70,7 @@ export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
 
 export async function submitDailyAttendance(req: Request, res: Response) {
   const { sectionId } = req.params;
-  const { records } = req.body;
+  const { records, targetDayNumber, comment } = req.body;
 
   if (!records || !Array.isArray(records) || records.length === 0) {
     return res.status(400).json({ success: false, message: 'Attendance records are required.' });
@@ -109,23 +110,57 @@ export async function submitDailyAttendance(req: Request, res: Response) {
       return res.status(400).json({ success: false, message: 'Roster changed. Please close and reopen attendance.' });
     }
 
-    // Auto-calculate next sequential day
-    const lastAttendance = await db.collection('attendance')
-      .find({ sectionId })
-      .sort({ dayNumber: -1 })
-      .limit(1)
-      .toArray();
-
-    const dayNumber = lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
+    // Determine target day: user custom dayNumber or auto-sequential next day
+    let dayNumber: number;
+    const parsedTarget = Number(targetDayNumber);
+    if (!isNaN(parsedTarget) && parsedTarget >= 1) {
+      dayNumber = Math.floor(parsedTarget);
+    } else {
+      const lastAttendance = await db.collection('attendance')
+        .find({ sectionId })
+        .sort({ dayNumber: -1 })
+        .limit(1)
+        .toArray();
+      dayNumber = lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
+    }
 
     // Stamp calendar date YYYY-MM-DD in Asia/Kathmandu
     const submissionDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
     const now = new Date().toISOString();
+    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
 
     const validRecords = records.map((r: any) => ({
       studentId: r.studentId,
       status: r.status === 'absent' ? 'absent' : 'present',
     }));
+
+    // Check if attendance for this day already exists (overwrite scenario)
+    const existingDay = await db.collection('attendance').findOne({ sectionId, dayNumber });
+    if (existingDay) {
+      await db.collection('attendance').updateOne(
+        { _id: existingDay._id },
+        {
+          $set: {
+            records: validRecords,
+            comment: trimmedComment || (existingDay.comment || ''),
+            lastModifiedAt: now,
+          },
+        }
+      );
+
+      return res.status(200).json({
+        success: true,
+        data: {
+          id: existingDay._id.toString(),
+          dayNumber,
+          submissionDate: existingDay.submissionDate,
+          comment: trimmedComment || (existingDay.comment || ''),
+          recordsCount: validRecords.length,
+          updated: true,
+        },
+        message: `Attendance for Day ${dayNumber} updated successfully.`,
+      });
+    }
 
     const result = await db.collection('attendance').insertOne({
       teacherId: section.teacherId,
@@ -133,6 +168,7 @@ export async function submitDailyAttendance(req: Request, res: Response) {
       sectionId,
       dayNumber,
       submissionDate,
+      comment: trimmedComment,
       records: validRecords,
       createdAt: now,
     });
@@ -143,6 +179,7 @@ export async function submitDailyAttendance(req: Request, res: Response) {
         id: result.insertedId.toString(),
         dayNumber,
         submissionDate,
+        comment: trimmedComment,
         recordsCount: validRecords.length,
       },
       message: `Attendance for Day ${dayNumber} saved successfully.`,
@@ -182,6 +219,7 @@ export async function getHistoricalDay(req: Request, res: Response) {
         sectionId: attendance.sectionId,
         dayNumber: attendance.dayNumber,
         submissionDate: attendance.submissionDate,
+        comment: attendance.comment || '',
         records: attendance.records,
         lastModifiedAt: attendance.lastModifiedAt,
         createdAt: attendance.createdAt,
@@ -195,7 +233,7 @@ export async function getHistoricalDay(req: Request, res: Response) {
 
 export async function updateHistoricalAttendance(req: Request, res: Response) {
   const { attendanceId } = req.params;
-  const { records } = req.body;
+  const { records, comment } = req.body;
 
   if (!attendanceId || !ObjectId.isValid(attendanceId)) {
     return res.status(400).json({ success: false, message: 'Invalid Attendance ID.' });
@@ -242,15 +280,18 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
       }
     }
 
-    // Update records and lastModifiedAt, while PRESERVING dayNumber and original submissionDate
+    const updateDoc: Record<string, any> = {
+      records: validRecords,
+      lastModifiedAt: now,
+    };
+    if (typeof comment === 'string') {
+      updateDoc.comment = comment.trim();
+    }
+
+    // Update records, comment, and lastModifiedAt, while PRESERVING dayNumber and original submissionDate
     await db.collection('attendance').updateOne(
       { _id: new ObjectId(attendanceId) },
-      {
-        $set: {
-          records: validRecords,
-          lastModifiedAt: now,
-        },
-      }
+      { $set: updateDoc }
     );
 
     return res.json({
