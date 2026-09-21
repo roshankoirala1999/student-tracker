@@ -266,12 +266,19 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
     const existingRecords = attendance.records || [];
     const existingStudentIds = new Set(existingRecords.map((r: any) => r.studentId));
 
+    // Fetch current students in section to merge or allow currently enrolled students as well
+    const currentStudents = await db.collection('students').find({ sectionId: attendance.sectionId }).toArray();
+    const allowedStudentIds = new Set([
+      ...existingStudentIds,
+      ...currentStudents.map((s) => s._id.toString()),
+    ]);
+
     const seenStudentIds = new Set<string>();
     const validRecords: Array<{ studentId: string; status: 'present' | 'absent' }> = [];
 
     for (const r of records) {
       const sid = typeof r.studentId === 'string' ? r.studentId : r.studentId?.toString();
-      if (sid && existingStudentIds.has(sid) && !seenStudentIds.has(sid)) {
+      if (sid && allowedStudentIds.has(sid) && !seenStudentIds.has(sid)) {
         seenStudentIds.add(sid);
         validRecords.push({
           studentId: sid,

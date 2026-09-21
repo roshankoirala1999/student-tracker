@@ -484,20 +484,10 @@ export const AttendanceModal: React.FC<Props> = ({
                 </div>
               </div>
 
-              {/* Student Card */}
-              <div className="bg-slate-50 dark:bg-[#111C33] border-2 border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-6 text-center shadow-xs">
-                <div className="text-xs font-mono font-bold text-slate-400 dark:text-slate-400 tracking-wider uppercase">
-                  Roll #{currentStudent.rollNumber || (currentIndex + 1)} · Symbol: {currentStudent.symbolNumber || '—'}
-                </div>
-                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white py-3 tracking-tight">
+              {/* Student Card - Clean, student name only */}
+              <div className="bg-slate-50 dark:bg-[#111C33] border-2 border-slate-200/80 dark:border-slate-700/80 rounded-2xl py-8 px-6 text-center shadow-xs">
+                <div className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
                   {currentStudent.studentName}
-                </div>
-                {/* Current state badge if previously answered */}
-                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
-                  <span>Current:</span>
-                  <span className={attendanceMap[currentStudent.id] === 'absent' ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}>
-                    {attendanceMap[currentStudent.id] === 'absent' ? 'Absent' : 'Present'}
-                  </span>
                 </div>
               </div>
 

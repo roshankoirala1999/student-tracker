@@ -9,14 +9,26 @@ export const TeacherNotificationDropdown: React.FC = () => {
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isOpenRef = useRef(false);
 
-  const fetchNotifications = async () => {
+  // Keep isOpenRef in sync
+  useEffect(() => {
+    isOpenRef.current = isOpen;
+  }, [isOpen]);
+
+  const fetchNotifications = async (markReadIfOpen = false) => {
     try {
       const res = await apiRequest<NotificationItem[]>('/api/notifications');
       if (res.success && res.data) {
-        setNotifications(res.data);
-        const unread = res.data.filter((n) => !n.isRead).length;
-        setUnreadCount(unread);
+        if (isOpenRef.current || markReadIfOpen) {
+          // If viewing, all are read
+          setNotifications(res.data.map((n) => ({ ...n, read: true, isRead: true })));
+          setUnreadCount(0);
+        } else {
+          setNotifications(res.data);
+          const unread = res.data.filter((n) => !(n.read || n.isRead)).length;
+          setUnreadCount(unread);
+        }
       }
     } catch {
       // ignore
@@ -26,7 +38,9 @@ export const TeacherNotificationDropdown: React.FC = () => {
   useEffect(() => {
     fetchNotifications();
     // Poll every 30 seconds for real-time notification arrival
-    const interval = setInterval(fetchNotifications, 30000);
+    const interval = setInterval(() => {
+      fetchNotifications();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
@@ -48,16 +62,21 @@ export const TeacherNotificationDropdown: React.FC = () => {
     setIsOpen(nextState);
 
     if (nextState) {
-      setLoading(true);
-      await fetchNotifications();
-      setLoading(false);
+      // User is viewing notifications now -> immediately clear badge count to 0
+      setUnreadCount(0);
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, read: true })));
 
-      if (unreadCount > 0) {
-        // Mark all as read
+      // Mark all read on backend
+      try {
         await apiRequest('/api/notifications/read', { method: 'PATCH' });
-        setUnreadCount(0);
-        setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      } catch {
+        // ignore
       }
+
+      setLoading(true);
+      await fetchNotifications(true);
+      setLoading(false);
+      setUnreadCount(0);
     }
   };
 
@@ -105,30 +124,33 @@ export const TeacherNotificationDropdown: React.FC = () => {
                 </p>
               </div>
             ) : (
-              notifications.map((n) => (
-                <div
-                  key={n.id}
-                  className={`p-3 rounded-xl border text-xs transition-colors ${
-                    !n.isRead
-                      ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60'
-                      : 'bg-slate-50/80 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/80'
-                  }`}
-                >
-                  <div className="font-bold text-[#2B547E] dark:text-blue-400 mb-1 flex items-center justify-between">
-                    <span>Message from admin:</span>
-                    {!n.isRead && (
-                      <span className="w-2 h-2 rounded-full bg-blue-500" />
-                    )}
+              notifications.map((n) => {
+                const isUnread = !(n.read || n.isRead);
+                return (
+                  <div
+                    key={n.id}
+                    className={`p-3 rounded-xl border text-xs transition-colors ${
+                      isUnread
+                        ? 'bg-blue-50/60 dark:bg-blue-950/30 border-blue-200 dark:border-blue-900/60'
+                        : 'bg-slate-50/80 dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/80'
+                    }`}
+                  >
+                    <div className="font-bold text-[#2B547E] dark:text-blue-400 mb-1 flex items-center justify-between">
+                      <span>Message from admin:</span>
+                      {isUnread && (
+                        <span className="w-2 h-2 rounded-full bg-blue-500" />
+                      )}
+                    </div>
+                    <p className="text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-medium">
+                      {n.message}
+                    </p>
+                    <div className="mt-2 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-slate-400 flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      <span>{new Date(n.createdAt).toLocaleString()}</span>
+                    </div>
                   </div>
-                  <p className="text-slate-800 dark:text-slate-200 whitespace-pre-wrap font-medium">
-                    {n.message}
-                  </p>
-                  <div className="mt-2 pt-1.5 border-t border-slate-200/60 dark:border-slate-700/60 text-[10px] text-slate-400 flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                    <span>{new Date(n.createdAt).toLocaleString()}</span>
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

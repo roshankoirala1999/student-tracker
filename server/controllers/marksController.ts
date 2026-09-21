@@ -199,7 +199,7 @@ export async function exportStudentRosterCsv(req: Request, res: Response) {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csvContent);
+    return res.send('\uFEFF' + csvContent);
   } catch (err: any) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Failed to export student info CSV.' });
@@ -300,6 +300,33 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     const existingByRoll = new Map<number, any>();
     existingStudents.forEach((s) => existingByRoll.set(s.rollNumber, s));
 
+    // Verify symbol numbers against non-updated students in the same section
+    const parsedRolls = new Set(parsedStudents.map((p) => p.rollNumber));
+    const nonUpdatedStudents = existingStudents.filter((s) => !parsedRolls.has(s.rollNumber));
+    const nonUpdatedSymbols = new Map<string, any>();
+    nonUpdatedStudents.forEach((s) => {
+      if (s.symbolNumber) {
+        nonUpdatedSymbols.set(s.symbolNumber.trim().toLowerCase(), s);
+      }
+    });
+
+    for (const p of parsedStudents) {
+      const conflict = nonUpdatedSymbols.get(p.symbolNumber.toLowerCase());
+      if (conflict) {
+        errors.push(
+          `Symbol Number "${p.symbolNumber}" is already assigned to Roll #${conflict.rollNumber} (${conflict.studentName}) who is not included in this file.`
+        );
+      }
+    }
+
+    if (errors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed for student info CSV.',
+        errors,
+      });
+    }
+
     let newCount = 0;
     parsedStudents.forEach((p) => {
       if (!existingByRoll.has(p.rollNumber)) newCount++;
@@ -312,6 +339,24 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       });
     }
 
+    // Phase 1: Free symbolNumber unique constraints on updated students to avoid swap collision errors
+    const matchedStudents = parsedStudents
+      .map((p) => existingByRoll.get(p.rollNumber))
+      .filter(Boolean);
+
+    if (matchedStudents.length > 0) {
+      const swapTimestamp = Date.now();
+      await Promise.all(
+        matchedStudents.map((match, idx) =>
+          db.collection('students').updateOne(
+            { _id: match._id },
+            { $set: { symbolNumber: `__TEMP_SWAP_${match._id.toString()}_${swapTimestamp}_${idx}` } }
+          )
+        )
+      );
+    }
+
+    // Phase 2: Perform final upserts with clean student roster data
     const now = new Date().toISOString();
     let upsertCount = 0;
 
@@ -419,7 +464,7 @@ export async function exportMarksCsv(req: Request, res: Response) {
 
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send(csvContent);
+    return res.send('\uFEFF' + csvContent);
   } catch (err: any) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Failed to export marks CSV.' });

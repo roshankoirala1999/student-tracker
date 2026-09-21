@@ -49,6 +49,22 @@ async function startServer() {
   // Mount API router
   app.use('/api', apiRouter);
 
+  // Centralized Error-Handling Middleware for API routes
+  app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error('[API Error]:', err?.message || err);
+    if (res.headersSent) {
+      return next(err);
+    }
+    const status = err.status || err.statusCode || (err.name === 'UnauthorizedError' ? 401 : 500);
+    const code = err.code || err.name || 'INTERNAL_SERVER_ERROR';
+    const message = err.message || 'An unexpected error occurred. Please try again.';
+    return res.status(status).json({
+      success: false,
+      error: code,
+      message,
+    });
+  });
+
   // Vite middleware for development vs static files for production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

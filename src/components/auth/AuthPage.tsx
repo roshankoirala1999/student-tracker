@@ -56,7 +56,7 @@ export const AuthPage: React.FC = () => {
 
     const res = await apiRequest<UserProfile>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: username.trim(), password }),
+      body: JSON.stringify({ username: username.trim(), password, portal: 'teacher' }),
     });
 
     setLoading(false);
@@ -75,7 +75,7 @@ export const AuthPage: React.FC = () => {
 
     const res = await apiRequest<UserProfile>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username: username.trim(), password }),
+      body: JSON.stringify({ username: username.trim(), password, portal: 'administrator' }),
     });
 
     setLoading(false);

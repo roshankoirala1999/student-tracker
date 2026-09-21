@@ -168,10 +168,18 @@ export async function login(req: Request, res: Response) {
 
     // Portal Segregation
     if (portal === 'administrator' && user.role === 'teacher') {
-      return res.status(401).json({ success: false, message: 'Invalid login credentials.' });
+      return res.status(403).json({
+        success: false,
+        error: 'PORTAL_MISMATCH',
+        message: 'This account is a teacher account. Please log in through the Teacher Portal.',
+      });
     }
     if (portal === 'teacher' && (user.role === 'administrator' || user.role === 'master_admin')) {
-      return res.status(401).json({ success: false, message: 'Invalid login credentials.' });
+      return res.status(403).json({
+        success: false,
+        error: 'PORTAL_MISMATCH',
+        message: 'Administrator accounts must log in through the Administrator Portal.',
+      });
     }
 
     if (user.status === 'suspended') {
