@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, User, Lock, Building, Calendar, HelpCircle, AlertCircle, CheckCircle, Trash2, KeyRound, Clock, ShieldAlert, AlertTriangle, ArrowLeft } from 'lucide-react';
+import { X, User, Lock, Building, Calendar, HelpCircle, AlertCircle, CheckCircle, Trash2, KeyRound, Clock, ShieldAlert, AlertTriangle, ArrowLeft, Phone, Mail, MapPin, Code } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.tsx';
 import { apiRequest } from '../../api/client.ts';
-import { ProfileQuestion, UserProfile } from '../../types/index.ts';
+import { ProfileQuestion, UserProfile, DeveloperContact } from '../../types/index.ts';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
 
 interface Props {
@@ -21,6 +21,7 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
   const [customFields, setCustomFields] = useState<Record<string, string>>({});
   const [questions, setQuestions] = useState<ProfileQuestion[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
+  const [developerContact, setDeveloperContact] = useState<DeveloperContact | null>(null);
 
   // Password fields state
   const [currentPassword, setCurrentPassword] = useState('');
@@ -53,6 +54,15 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
           }
         })
         .finally(() => setLoadingQuestions(false));
+
+      // Fetch developer contact info
+      apiRequest<DeveloperContact>('/api/developer-contact')
+        .then((res) => {
+          if (res.success && res.data) {
+            setDeveloperContact(res.data);
+          }
+        })
+        .catch(() => {});
     }
   }, [isOpen, user]);
 
@@ -220,83 +230,97 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
 
         {/* Modal Body */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 flex-1">
-          {/* Account Expiry & Access Mode Section (Photo 4) */}
-          <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
-                <Clock className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
-                <span>Account &amp; Access Status</span>
-              </span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
-                  isReadOnly
-                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                    : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                }`}
-              >
-                {isReadOnly ? 'Read-Only Mode' : 'Full Mode'}
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Remaining Access</span>
-                <span className={`text-sm font-bold ${
-                  isExpired
-                    ? 'text-rose-600 dark:text-rose-400'
-                    : daysRemaining <= 3
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-emerald-600 dark:text-emerald-400'
-                }`}>
-                  {isExpired ? '0 Days (Expired)' : `${daysRemaining} Day${daysRemaining === 1 ? '' : 's'} Remaining`}
+          {/* Account Expiry & Access Mode Section (Only if Expiry Mode is ON) */}
+          {user.expiryMode !== false ? (
+            <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                  <Clock className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
+                  <span>Account &amp; Access Status</span>
+                </span>
+                <span
+                  className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
+                    isReadOnly
+                      ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                  }`}
+                >
+                  {isReadOnly ? 'Read-Only Mode' : 'Full Mode'}
                 </span>
               </div>
 
-              <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Expiry Date</span>
-                <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
-                  {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : 'N/A'}
-                </span>
-              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Remaining Access</span>
+                  <span className={`text-sm font-bold ${
+                    isExpired
+                      ? 'text-rose-600 dark:text-rose-400'
+                      : daysRemaining <= 3
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }`}>
+                    {isExpired ? '0 Days (Expired)' : `${daysRemaining} Day${daysRemaining === 1 ? '' : 's'} Remaining`}
+                  </span>
+                </div>
 
-              <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
-                <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Profile Completeness</span>
-                <span className={`text-xs font-bold ${
-                  user.missingFields && user.missingFields.length > 0
-                    ? 'text-amber-600 dark:text-amber-400'
-                    : 'text-emerald-600 dark:text-emerald-400'
-                }`}>
-                  {user.missingFields && user.missingFields.length > 0
-                    ? `${user.missingFields.length} Compulsory Field(s) Incomplete`
-                    : 'Compulsory Fields Complete'}
-                </span>
-              </div>
-            </div>
+                <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Expiry Date</span>
+                  <span className="text-xs font-semibold text-slate-800 dark:text-slate-200">
+                    {user.expiresAt ? new Date(user.expiresAt).toLocaleDateString() : 'N/A'}
+                  </span>
+                </div>
 
-            {/* In-Profile Warning Banners (Photo 4) */}
-            {isExpired ? (
-              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
-                <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold">Account Expired — Read-Only Mode Active</div>
-                  <div className="text-[11px] mt-0.5 text-rose-700 dark:text-rose-300/90">
-                    Your teacher account has expired. You are allowed to view existing classes, sections, students, and marks, but creating or modifying records is disabled. Kindly contact your master administrator to renew access.
-                  </div>
+                <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Profile Completeness</span>
+                  <span className={`text-xs font-bold ${
+                    user.missingFields && user.missingFields.length > 0
+                      ? 'text-amber-600 dark:text-amber-400'
+                      : 'text-emerald-600 dark:text-emerald-400'
+                  }`}>
+                    {user.missingFields && user.missingFields.length > 0
+                      ? `${user.missingFields.length} Compulsory Field(s) Incomplete`
+                      : 'Compulsory Fields Complete'}
+                  </span>
                 </div>
               </div>
-            ) : daysRemaining <= 3 ? (
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <div className="font-bold">{daysRemaining} Day{daysRemaining === 1 ? '' : 's'} Remaining</div>
-                  <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
-                    Your account access will expire in {daysRemaining} day{daysRemaining === 1 ? '' : 's'}. Kindly contact your administrator to renew or extend access before it transitions into read-only mode.
+
+              {/* In-Profile Warning Banners (Photo 4) */}
+              {isExpired ? (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">Account Expired — Read-Only Mode Active</div>
+                    <div className="text-[11px] mt-0.5 text-rose-700 dark:text-rose-300/90">
+                      Your teacher account has expired. You are allowed to view existing classes, sections, students, and marks, but creating or modifying records is disabled. Kindly contact your master administrator to renew access.
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : null}
+              ) : daysRemaining <= 3 ? (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">{daysRemaining} Day{daysRemaining === 1 ? '' : 's'} Remaining</div>
+                    <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
+                      Your account access will expire in {daysRemaining} day{daysRemaining === 1 ? '' : 's'}. Kindly contact your administrator to renew or extend access before it transitions into read-only mode.
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
-            {user.missingFields && user.missingFields.length > 0 && !isExpired && (
+              {user.missingFields && user.missingFields.length > 0 && !isExpired && (
+                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-bold">Compulsory Profile Incomplete — Read-Only Mode Active</div>
+                    <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
+                      You are in Read-Only Mode because compulsory profile fields are incomplete: <strong>{user.missingFields.join(', ')}</strong>. Kindly fill and save all compulsory fields below to unlock Full Mode.
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            user.missingFields && user.missingFields.length > 0 ? (
               <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
                 <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
                 <div>
@@ -306,8 +330,8 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+            ) : null
+          )}
 
           {/* Institutional Identity & Contact Info (Photo 3) */}
           <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
@@ -559,34 +583,84 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </form>
           </div>
 
-          {/* Danger Zone: Account Deletion */}
-          <div className="border-t border-rose-200 dark:border-rose-900/40 pt-5">
-            <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div>
-                <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
-                  <Trash2 className="w-3.5 h-3.5" />
-                  <span>Delete Teacher Account</span>
-                </h4>
-                <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 max-w-md">
-                  Permanently deletes your account and cascades removal across all classes, sections, students, marks, and attendance records.
-                </p>
-                {user.isDeletionLocked && (
-                  <p className="text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium">
-                    <Lock className="w-3 h-3" />  
-                  </p>
+          {/* Contact Developer Section (If filled by admin) */}
+          {developerContact && (developerContact.name || developerContact.phone || developerContact.address || developerContact.email) && (
+            <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-2.5">
+              <div className="flex items-center gap-1.5 pb-2 border-b border-slate-200 dark:border-slate-800">
+                <Code className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300">
+                  Contact Developer
+                </span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+                {developerContact.name && (
+                  <div className="flex items-center gap-2 bg-white dark:bg-[#1A2232] p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                    <User className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Developer Name</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">{developerContact.name}</span>
+                    </div>
+                  </div>
+                )}
+                {developerContact.phone && (
+                  <div className="flex items-center gap-2 bg-white dark:bg-[#1A2232] p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                    <Phone className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Phone Number</span>
+                      <a href={`tel:${developerContact.phone}`} className="font-semibold text-[#2B547E] dark:text-blue-400 hover:underline">
+                        {developerContact.phone}
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {developerContact.email && (
+                  <div className="flex items-center gap-2 bg-white dark:bg-[#1A2232] p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/80">
+                    <Mail className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Email Address</span>
+                      <a href={`mailto:${developerContact.email}`} className="font-semibold text-[#2B547E] dark:text-blue-400 hover:underline">
+                        {developerContact.email}
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {developerContact.address && (
+                  <div className="flex items-center gap-2 bg-white dark:bg-[#1A2232] p-2.5 rounded-lg border border-slate-200 dark:border-slate-700/80 sm:col-span-2">
+                    <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
+                    <div>
+                      <span className="text-[10px] text-slate-400 block font-medium">Address / Location</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">{developerContact.address}</span>
+                    </div>
+                  </div>
                 )}
               </div>
-
-              <button
-                type="button"
-                disabled={user.isDeletionLocked}
-                onClick={() => setDeleteModalOpen(true)}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold shrink-0 cursor-pointer transition-colors shadow-xs"
-              >
-                Delete Account
-              </button>
             </div>
-          </div>
+          )}
+
+          {/* Danger Zone: Account Deletion (Completely removed when delete mode is locked) */}
+          {!user.isDeletionLocked && (
+            <div className="border-t border-rose-200 dark:border-rose-900/40 pt-5">
+              <div className="bg-rose-50/60 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="text-xs font-bold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Delete Teacher Account</span>
+                  </h4>
+                  <p className="text-[11px] text-slate-600 dark:text-slate-400 mt-1 max-w-md">
+                    Permanently deletes your account and cascades removal across all classes, sections, students, marks, and attendance records.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-semibold shrink-0 cursor-pointer transition-colors shadow-xs"
+                >
+                  Delete Account
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Modal Sticky Footer with Back / Close Button */}

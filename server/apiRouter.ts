@@ -124,6 +124,7 @@ api.put('/attendance/:attendanceId', requireTeacher, attendCtrl.updateHistorical
 // 9. Master Admin
 api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
 api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
+api.get('/admin/teachers/:teacherId/export', requireMasterAdmin, adminCtrl.exportTeacherData);
 api.patch('/admin/teachers/:teacherId/status', requireMasterAdmin, adminCtrl.updateTeacherStatus);
 api.patch('/admin/teachers/:teacherId/profile', requireMasterAdmin, adminCtrl.updateTeacherProfileByAdmin);
 api.patch('/admin/teachers/:teacherId/expiry', requireMasterAdmin, adminCtrl.updateTeacherExpiry);
@@ -132,6 +133,21 @@ api.patch('/admin/teachers/:teacherId/deletion-lock', requireMasterAdmin, adminC
 api.patch('/admin/teachers/:teacherId/password', requireMasterAdmin, adminCtrl.editTeacherPassword);
 api.post('/admin/teachers/:teacherId/reset-password', requireMasterAdmin, adminCtrl.resetTeacherPassword);
 api.delete('/admin/teachers/:teacherId', requireMasterAdmin, adminCtrl.deleteTeacher);
+
+// New User Default Settings
+api.get('/admin/new-user-defaults', requireMasterAdmin, adminCtrl.getNewUserDefaults);
+api.put('/admin/new-user-defaults', requireMasterAdmin, adminCtrl.updateNewUserDefaults);
+
+// Developer Contact Info
+api.get('/developer-contact', adminCtrl.getDeveloperContact);
+api.put('/admin/developer-contact', requireMasterAdmin, adminCtrl.updateDeveloperContact);
+
+// Notifications (Admin -> Teacher)
+api.get('/notifications', adminCtrl.getTeacherNotifications);
+api.patch('/notifications/read', adminCtrl.markNotificationsRead);
+api.get('/admin/teachers/:teacherId/notifications', requireMasterAdmin, adminCtrl.getAdminTeacherNotifications);
+api.post('/admin/teachers/:teacherId/notifications', requireMasterAdmin, adminCtrl.sendTeacherNotification);
+api.delete('/admin/notifications/:notificationId', requireMasterAdmin, adminCtrl.deleteAdminNotification);
 
 // Institutional Profile Questions (Admin)
 api.get('/admin/profile-questions', requireMasterAdmin, authCtrl.listProfileQuestions);

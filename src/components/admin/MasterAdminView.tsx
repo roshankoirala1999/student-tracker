@@ -20,11 +20,21 @@ import {
   ArrowDown,
   HelpCircle,
   Clock,
+  Download,
+  Settings,
+  Mail,
+  Phone,
+  MapPin,
+  Code,
+  Bell,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { apiRequest } from '../../api/client.ts';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
-import { ProfileQuestion } from '../../types/index.ts';
+import { ProfileQuestion, DeveloperContact } from '../../types/index.ts';
 import { TeacherExpiryModal } from './TeacherExpiryModal.tsx';
+import { NewUserDefaultsModal } from './NewUserDefaultsModal.tsx';
+import { AdminNotificationModal } from './AdminNotificationModal.tsx';
 
 interface TeacherItem {
   id: string;
@@ -39,6 +49,7 @@ interface TeacherItem {
   status: 'active' | 'suspended';
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
+  expiryMode?: boolean;
   expiresAt?: string;
   isExpired?: boolean;
   daysRemaining?: number;
@@ -136,6 +147,25 @@ export const MasterAdminView: React.FC = () => {
   // Expiry modal state
   const [expiryModalTeacher, setExpiryModalTeacher] = useState<TeacherItem | null>(null);
 
+  // New User Defaults modal state
+  const [newUserDefaultsOpen, setNewUserDefaultsOpen] = useState(false);
+
+  // Admin Notification modal state
+  const [notificationModalTeacher, setNotificationModalTeacher] = useState<TeacherItem | null>(null);
+
+  // Teacher info export state
+  const [downloadingTeacherId, setDownloadingTeacherId] = useState<string | null>(null);
+  const [selectedDownloadTeacherId, setSelectedDownloadTeacherId] = useState<string>('');
+
+  // Developer contact state
+  const [devName, setDevName] = useState('');
+  const [devPhone, setDevPhone] = useState('');
+  const [devAddress, setDevAddress] = useState('');
+  const [devEmail, setDevEmail] = useState('');
+  const [devLoading, setDevLoading] = useState(false);
+  const [devSaving, setDevSaving] = useState(false);
+  const [devMsg, setDevMsg] = useState<string | null>(null);
+
   const loadTeachers = async () => {
     setLoading(true);
     setError(null);
@@ -157,10 +187,74 @@ export const MasterAdminView: React.FC = () => {
     }
   };
 
+  const loadDevContact = async () => {
+    setDevLoading(true);
+    const res = await apiRequest<DeveloperContact>('/api/admin/settings/developer-contact');
+    setDevLoading(false);
+    if (res.success && res.data) {
+      setDevName(res.data.name || '');
+      setDevPhone(res.data.phone || '');
+      setDevAddress(res.data.address || '');
+      setDevEmail(res.data.email || '');
+    }
+  };
+
   useEffect(() => {
     loadTeachers();
     loadQuestions();
+    loadDevContact();
   }, []);
+
+  const handleSaveDevContact = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setDevSaving(true);
+    setDevMsg(null);
+    const res = await apiRequest('/api/admin/settings/developer-contact', {
+      method: 'PUT',
+      body: JSON.stringify({
+        name: devName.trim(),
+        phone: devPhone.trim(),
+        address: devAddress.trim(),
+        email: devEmail.trim(),
+      }),
+    });
+    setDevSaving(false);
+    if (res.success) {
+      setDevMsg('Developer contact information updated successfully.');
+      setTimeout(() => setDevMsg(null), 4000);
+    } else {
+      setError(res.message || 'Failed to save developer contact info.');
+    }
+  };
+
+  const handleDownloadTeacherInfo = async (teacher: TeacherItem) => {
+    setDownloadingTeacherId(teacher.id);
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`/api/admin/teachers/${teacher.id}/export`, {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
+      if (!response.ok) {
+        throw new Error('Failed to download teacher data.');
+      }
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${teacher.username}_full_data.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setSuccessMsg(`Teacher "${teacher.username}" full academic & student data downloaded successfully.`);
+    } catch (err: any) {
+      setError(err.message || 'Download failed.');
+    } finally {
+      setDownloadingTeacherId(null);
+    }
+  };
 
   const togglePasswordVisibility = (teacherId: string) => {
     setRevealedPasswords((prev) => ({
@@ -372,8 +466,20 @@ export const MasterAdminView: React.FC = () => {
           </p>
         </div>
 
-        <div className="bg-[#F4F6FA] dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 px-4 py-2.5 rounded-xl text-xs text-slate-600 dark:text-slate-300 shrink-0">
-          Total Registered Teachers: <span className="font-bold text-slate-900 dark:text-slate-100">{teachers.length}</span>
+        <div className="flex items-center gap-3 shrink-0">
+          <button
+            type="button"
+            onClick={() => setNewUserDefaultsOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2B547E] hover:bg-[#355C7D] text-white text-xs font-semibold shadow-xs cursor-pointer transition-colors"
+            title="Configure default expiry mode and account deletion rules for new accounts"
+          >
+            <Settings className="w-4 h-4" />
+            <span>New user default setting</span>
+          </button>
+
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-xl text-xs text-slate-600 dark:text-slate-300">
+            Total Teachers: <span className="font-bold text-slate-900 dark:text-slate-100">{teachers.length}</span>
+          </div>
         </div>
       </div>
 
@@ -409,6 +515,49 @@ export const MasterAdminView: React.FC = () => {
               className="w-full pl-8 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 shadow-2xs"
             />
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" />
+          </div>
+        </div>
+
+        {/* Download Teacher Info Section */}
+        <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3.5 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-xs">
+            <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 flex items-center justify-center shrink-0">
+              <Download className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="font-bold text-slate-800 dark:text-slate-200">Download Teacher Info</span>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                Export comprehensive teacher profile, class rosters, marks, and attendance logs to CSV.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={selectedDownloadTeacherId}
+              onChange={(e) => setSelectedDownloadTeacherId(e.target.value)}
+              className="px-3 py-1.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#1E293B] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+            >
+              <option value="">-- Select teacher to download --</option>
+              {teachers.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.fullName ? `${t.fullName} (@${t.username})` : `@${t.username}`}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              disabled={!selectedDownloadTeacherId || downloadingTeacherId === selectedDownloadTeacherId}
+              onClick={() => {
+                const target = teachers.find((t) => t.id === selectedDownloadTeacherId);
+                if (target) handleDownloadTeacherInfo(target);
+              }}
+              className="px-3.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>{downloadingTeacherId === selectedDownloadTeacherId ? 'Downloading...' : 'Download'}</span>
+            </button>
           </div>
         </div>
 
@@ -533,6 +682,31 @@ export const MasterAdminView: React.FC = () => {
                         >
                           <span className="flex items-center gap-1 inline-flex">
                             <Eye className="w-3.5 h-3.5" /> Inspect
+                          </span>
+                        </button>
+
+                        {/* Send Notification to Teacher */}
+                        <button
+                          type="button"
+                          onClick={() => setNotificationModalTeacher(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-800 dark:text-blue-300 cursor-pointer transition-colors"
+                          title="Send notification to teacher"
+                        >
+                          <span className="flex items-center gap-1 inline-flex">
+                            <Bell className="w-3.5 h-3.5" /> Send notification
+                          </span>
+                        </button>
+
+                        {/* Download Teacher Info (CSV) */}
+                        <button
+                          type="button"
+                          disabled={downloadingTeacherId === t.id}
+                          onClick={() => handleDownloadTeacherInfo(t)}
+                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 cursor-pointer transition-colors"
+                          title="Download teacher info & rosters to CSV"
+                        >
+                          <span className="flex items-center gap-1 inline-flex">
+                            <Download className="w-3.5 h-3.5" /> {downloadingTeacherId === t.id ? 'Exporting...' : 'Download Info'}
                           </span>
                         </button>
 
@@ -724,6 +898,107 @@ export const MasterAdminView: React.FC = () => {
         </div>
       </div>
 
+      {/* Developer Contact Info Management Section */}
+      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs space-y-4 transition-colors">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <Code className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
+              <span>Developer Contact Info</span>
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Set developer contact details. Whichever fields are filled will appear under "Contact Developer" in teachers' profiles. Unfilled fields remain hidden.
+            </p>
+          </div>
+        </div>
+
+        {devMsg && (
+          <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300 text-xs rounded-xl flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span>{devMsg}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSaveDevContact} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Developer / Support Name
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={devName}
+                  onChange={(e) => setDevName(e.target.value)}
+                  placeholder="e.g. John Doe / Support Team"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+                <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Phone Number
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={devPhone}
+                  onChange={(e) => setDevPhone(e.target.value)}
+                  placeholder="e.g. +977 98XXXXXXXX"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Address / Location
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={devAddress}
+                  onChange={(e) => setDevAddress(e.target.value)}
+                  placeholder="e.g. Kathmandu, Nepal"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+                <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                Email Address
+              </label>
+              <div className="relative">
+                <input
+                  type="email"
+                  value={devEmail}
+                  onChange={(e) => setDevEmail(e.target.value)}
+                  placeholder="e.g. dev@example.com"
+                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                />
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <button
+              type="submit"
+              disabled={devSaving || devLoading}
+              className="px-4 py-2 bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl text-xs font-semibold shadow-xs cursor-pointer transition-colors flex items-center gap-1.5"
+            >
+              <CheckCircle className="w-3.5 h-3.5" />
+              <span>{devSaving ? 'Saving...' : 'Save Developer Contact Info'}</span>
+            </button>
+          </div>
+        </form>
+      </div>
+
       {/* Teacher Inspection Modal */}
       {inspectTeacher && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
@@ -862,7 +1137,28 @@ export const MasterAdminView: React.FC = () => {
               )}
             </div>
 
-            <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A] flex justify-end">
+            <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-700 bg-[#F4F6FA] dark:bg-[#0F172A] flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setNotificationModalTeacher(inspectTeacher)}
+                  className="px-3.5 py-2 bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-800 dark:text-blue-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Send Notification</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={downloadingTeacherId === inspectTeacher.id}
+                  onClick={() => handleDownloadTeacherInfo(inspectTeacher)}
+                  className="px-3.5 py-2 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors flex items-center gap-1.5"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>{downloadingTeacherId === inspectTeacher.id ? 'Exporting...' : 'Download Info (CSV)'}</span>
+                </button>
+              </div>
+
               <button
                 type="button"
                 onClick={() => setInspectTeacher(null)}
@@ -1086,6 +1382,22 @@ export const MasterAdminView: React.FC = () => {
           await loadTeachers();
           setSuccessMsg('Account expiry days updated successfully.');
         }}
+      />
+
+      {/* New User Default Settings Modal */}
+      <NewUserDefaultsModal
+        isOpen={newUserDefaultsOpen}
+        onClose={() => setNewUserDefaultsOpen(false)}
+        onSuccess={async () => {
+          await loadTeachers();
+        }}
+      />
+
+      {/* Admin Notification Modal */}
+      <AdminNotificationModal
+        isOpen={notificationModalTeacher !== null}
+        teacher={notificationModalTeacher}
+        onClose={() => setNotificationModalTeacher(null)}
       />
     </div>
   );

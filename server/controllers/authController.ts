@@ -67,8 +67,16 @@ export async function registerTeacher(req: Request, res: Response) {
 
     const passwordHash = await hashPassword(password);
     const now = new Date().toISOString();
-    // 7-day default access period on initial creation
-    const trialExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+    // Fetch system default settings for new users
+    const defaultSettings = await db.collection('system_settings').findOne({ _id: 'new_user_defaults' as any });
+    const isExpiryModeOn = defaultSettings ? defaultSettings.expiryMode !== false : true;
+    const canDelete = defaultSettings ? defaultSettings.canDeleteAccount === true : false;
+
+    // 7-day default access period if expiry mode is on, or null if off
+    const trialExpiresAt = isExpiryModeOn
+      ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+      : null;
 
     const insertResult = await db.collection('users').insertOne({
       username: cleanUsername,
@@ -81,9 +89,10 @@ export async function registerTeacher(req: Request, res: Response) {
       passwordHash,
       role: 'teacher' as UserRole,
       status: 'active' as UserStatus,
-      isDeletionLocked: false,
+      isDeletionLocked: !canDelete,
       mustChangePassword: false,
       tokenVersion: 0,
+      expiryMode: isExpiryModeOn,
       expiresAt: trialExpiresAt,
       createdAt: now,
     });
@@ -96,9 +105,9 @@ export async function registerTeacher(req: Request, res: Response) {
       role: 'teacher',
       status: 'active',
       tokenVersion: 0,
-      expiresAt: trialExpiresAt,
+      expiresAt: trialExpiresAt || undefined,
       isExpired: false,
-      daysRemaining: 7,
+      daysRemaining: isExpiryModeOn ? 7 : undefined,
     });
 
     const csrfToken = generateCsrfToken();
@@ -117,12 +126,13 @@ export async function registerTeacher(req: Request, res: Response) {
         plainPassword: password,
         role: 'teacher',
         status: 'active',
-        isDeletionLocked: false,
+        isDeletionLocked: !canDelete,
         mustChangePassword: false,
         tokenVersion: 0,
+        expiryMode: isExpiryModeOn,
         expiresAt: trialExpiresAt,
         isExpired: false,
-        daysRemaining: 3,
+        daysRemaining: isExpiryModeOn ? 7 : undefined,
         createdAt: now,
       },
       csrfToken,
@@ -168,14 +178,15 @@ export async function login(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Your account has been suspended by the administrator.' });
     }
 
-    // Sync plainPassword and ensure 3-day trial expiry exists for teachers
+    // Sync plainPassword and ensure 7-day trial expiry exists for teachers if expiryMode is enabled
     const updateOps: any = {};
     if (!user.plainPassword && password) {
       updateOps.plainPassword = password;
       user.plainPassword = password;
     }
-    if (user.role === 'teacher' && !user.expiresAt) {
-      const defaultTrial = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+    const hasExpiryMode = user.role === 'teacher' && user.expiryMode !== false;
+    if (hasExpiryMode && !user.expiresAt) {
+      const defaultTrial = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       updateOps.expiresAt = defaultTrial;
       user.expiresAt = defaultTrial;
     }
@@ -183,9 +194,9 @@ export async function login(req: Request, res: Response) {
       await db.collection('users').updateOne({ _id: user._id }, { $set: updateOps });
     }
 
-    const expiryTime = user.expiresAt ? new Date(user.expiresAt).getTime() : Date.now() + 3 * 86400000;
-    const isExpired = user.role === 'teacher' && expiryTime < Date.now();
-    const daysRemaining = user.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const expiryTime = (hasExpiryMode && user.expiresAt) ? new Date(user.expiresAt).getTime() : 0;
+    const isExpired = hasExpiryMode && expiryTime < Date.now();
+    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
     const userId = user._id.toString();
     const tokenVersion = user.tokenVersion ?? 0;
@@ -195,7 +206,7 @@ export async function login(req: Request, res: Response) {
       role: user.role,
       status: user.status || 'active',
       tokenVersion,
-      expiresAt: user.expiresAt,
+      expiresAt: hasExpiryMode ? user.expiresAt : undefined,
       isExpired,
       daysRemaining,
     });
@@ -219,7 +230,8 @@ export async function login(req: Request, res: Response) {
         isDeletionLocked: !!user.isDeletionLocked,
         mustChangePassword: !!user.mustChangePassword,
         tokenVersion,
-        expiresAt: user.expiresAt,
+        expiryMode: hasExpiryMode,
+        expiresAt: hasExpiryMode ? user.expiresAt : null,
         isExpired,
         daysRemaining,
         createdAt: user.createdAt,
@@ -353,15 +365,16 @@ export async function getMe(req: Request, res: Response) {
     }
 
     const isTeacher = req.user.role === 'teacher';
-    let userExpiresAt = user?.expiresAt;
-    if (isTeacher && !userExpiresAt && user) {
+    const hasExpiryMode = isTeacher && user?.expiryMode !== false;
+    let userExpiresAt = hasExpiryMode ? user?.expiresAt : null;
+    if (hasExpiryMode && !userExpiresAt && user) {
       userExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       await db.collection('users').updateOne({ _id: user._id }, { $set: { expiresAt: userExpiresAt } });
     }
 
-    const expiryTime = userExpiresAt ? new Date(userExpiresAt).getTime() : Date.now() + 7 * 86400000;
-    const isExpired = isTeacher && expiryTime < Date.now();
-    const daysRemaining = isTeacher ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const expiryTime = (hasExpiryMode && userExpiresAt) ? new Date(userExpiresAt).getTime() : 0;
+    const isExpired = hasExpiryMode && expiryTime < Date.now();
+    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
     // Check compulsory fields for teachers
     let missingFields: string[] = [];
@@ -415,6 +428,7 @@ export async function getMe(req: Request, res: Response) {
         mustChangePassword: user ? !!user.mustChangePassword : false,
         tokenVersion: user ? user.tokenVersion ?? 0 : 0,
         fullNameLocked: !!user?.fullNameLocked,
+        expiryMode: hasExpiryMode,
         isReadOnly,
         readOnlyReason,
         missingFields,
@@ -523,9 +537,10 @@ export async function updateTeacherProfile(req: Request, res: Response) {
     const updatedUser = await db.collection('users').findOne({ _id: user._id });
 
     // Recompute compulsory completeness
-    const expiryTime = updatedUser?.expiresAt ? new Date(updatedUser.expiresAt).getTime() : Date.now() + 7 * 86400000;
-    const isExpired = updatedUser?.role === 'teacher' && expiryTime < Date.now();
-    const daysRemaining = updatedUser?.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const hasExpiryMode = updatedUser?.role === 'teacher' && updatedUser?.expiryMode !== false;
+    const expiryTime = (hasExpiryMode && updatedUser?.expiresAt) ? new Date(updatedUser.expiresAt).getTime() : 0;
+    const isExpired = hasExpiryMode && expiryTime < Date.now();
+    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
     let missingFields: string[] = [];
     if (updatedUser?.role === 'teacher') {
@@ -570,6 +585,7 @@ export async function updateTeacherProfile(req: Request, res: Response) {
         mustChangePassword: !!updatedUser!.mustChangePassword,
         tokenVersion: updatedUser!.tokenVersion ?? 0,
         fullNameLocked: !!updatedUser!.fullNameLocked,
+        expiryMode: hasExpiryMode,
         isReadOnly,
         readOnlyReason,
         missingFields,

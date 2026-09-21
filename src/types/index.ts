@@ -23,6 +23,7 @@ export interface UserProfile {
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
   tokenVersion?: number;
+  expiryMode?: boolean;
   expiresAt?: string;
   isExpired?: boolean;
   daysRemaining?: number;
@@ -47,12 +48,36 @@ export interface TeacherItem {
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
   fullNameLocked?: boolean;
+  expiryMode?: boolean;
   expiresAt?: string;
   isExpired?: boolean;
   daysRemaining?: number;
   createdAt: string;
   classCount: number;
   studentCount: number;
+}
+
+export interface DeveloperContact {
+  name: string;
+  phone: string;
+  address: string;
+  email: string;
+}
+
+export interface NewUserDefaults {
+  expiryMode: boolean;
+  canDeleteAccount: boolean;
+  allowAccountDeletion?: boolean;
+}
+
+export interface NotificationItem {
+  id: string;
+  teacherId?: string;
+  message: string;
+  read?: boolean;
+  isRead?: boolean;
+  createdAt: string;
+  adminUsername?: string;
 }
 
 export interface ClassItem {

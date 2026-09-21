@@ -6,6 +6,7 @@ interface TeacherItem {
   id: string;
   username: string;
   fullName?: string;
+  expiryMode?: boolean;
   expiresAt?: string;
   isExpired?: boolean;
   daysRemaining?: number;
@@ -28,8 +29,12 @@ export const TeacherExpiryModal: React.FC<Props> = ({
   const [error, setError] = useState<string | null>(null);
   const [customDays, setCustomDays] = useState<string>('');
   const [customDate, setCustomDate] = useState<string>('');
+  const [expiryModeOn, setExpiryModeOn] = useState<boolean>(true);
 
   useEffect(() => {
+    if (teacher) {
+      setExpiryModeOn(teacher.expiryMode !== false);
+    }
     if (teacher?.expiresAt) {
       const d = new Date(teacher.expiresAt);
       if (!isNaN(d.getTime())) {
@@ -61,6 +66,25 @@ export const TeacherExpiryModal: React.FC<Props> = ({
   const currentExpiry = teacher.expiresAt ? new Date(teacher.expiresAt) : null;
   const isExpired = teacher.isExpired ?? (currentExpiry ? currentExpiry.getTime() < Date.now() : false);
   const daysRemaining = teacher.daysRemaining ?? 0;
+
+  const handleToggleExpiryMode = async (turnOn: boolean) => {
+    setLoading(true);
+    setError(null);
+    const res = await apiRequest(`/api/admin/teachers/${teacher.id}/expiry`, {
+      method: 'PATCH',
+      body: JSON.stringify({ expiryMode: turnOn }),
+    });
+    setLoading(false);
+    if (res.success) {
+      setExpiryModeOn(turnOn);
+      await onSuccess();
+      if (!turnOn) {
+        onClose();
+      }
+    } else {
+      setError(res.message || 'Failed to toggle expiry mode.');
+    }
+  };
 
   const handleAdjustDays = async (daysDelta: number) => {
     if (daysDelta === 0) return;
@@ -157,6 +181,46 @@ export const TeacherExpiryModal: React.FC<Props> = ({
         </div>
 
         <div className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+          {/* Expiry Mode Toggle Selector */}
+          <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-3.5 border border-slate-200 dark:border-slate-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block">
+                  Expiry Mode
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {expiryModeOn ? 'Account access expires on schedule' : 'Lifetime access (no expiration concept)'}
+                </span>
+              </div>
+              <div className="inline-flex rounded-lg border border-slate-300 dark:border-slate-700 p-0.5 bg-slate-200/60 dark:bg-slate-900">
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleToggleExpiryMode(true)}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                    expiryModeOn
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  ON
+                </button>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => handleToggleExpiryMode(false)}
+                  className={`px-3 py-1 text-xs font-bold rounded-md transition-colors cursor-pointer ${
+                    !expiryModeOn
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  OFF
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Teacher Summary Box */}
           <div className="bg-slate-50 dark:bg-slate-800/60 rounded-xl p-4 border border-slate-200 dark:border-slate-700">
             <div className="font-bold text-slate-900 dark:text-slate-100 text-sm">
@@ -166,31 +230,42 @@ export const TeacherExpiryModal: React.FC<Props> = ({
               @{teacher.username}
             </div>
 
-            <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
-              <span className="text-slate-600 dark:text-slate-400">Current Expiry Status:</span>
-              <span
-                className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
-                  isExpired
-                    ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                    : daysRemaining <= 3
-                    ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-                    : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
-                }`}
-              >
-                {isExpired ? (
-                  <>
-                    <AlertTriangle className="w-3 h-3" /> Expired
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle className="w-3 h-3" /> {daysRemaining} day{daysRemaining === 1 ? '' : 's'} remaining
-                  </>
+            {expiryModeOn ? (
+              <>
+                <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-600 dark:text-slate-400">Current Expiry Status:</span>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold inline-flex items-center gap-1 ${
+                      isExpired
+                        ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
+                        : daysRemaining <= 3
+                        ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
+                        : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
+                    }`}
+                  >
+                    {isExpired ? (
+                      <>
+                        <AlertTriangle className="w-3 h-3" /> Expired
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-3 h-3" /> {daysRemaining} day{daysRemaining === 1 ? '' : 's'} remaining
+                      </>
+                    )}
+                  </span>
+                </div>
+                {currentExpiry && (
+                  <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
+                    Valid until: {currentExpiry.toLocaleDateString()} ({currentExpiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                  </div>
                 )}
-              </span>
-            </div>
-            {currentExpiry && (
-              <div className="text-[11px] text-slate-400 dark:text-slate-500 mt-1">
-                Valid until: {currentExpiry.toLocaleDateString()} ({currentExpiry.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+              </>
+            ) : (
+              <div className="mt-3 pt-3 border-t border-slate-200 dark:border-slate-700/80 flex items-center justify-between text-xs">
+                <span className="text-slate-600 dark:text-slate-400">Current Expiry Status:</span>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300 inline-flex items-center gap-1">
+                  <CheckCircle className="w-3 h-3" /> Expiry Mode OFF (Lifetime Access)
+                </span>
               </div>
             )}
           </div>
@@ -201,109 +276,122 @@ export const TeacherExpiryModal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Quick Add Days */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              Quick Add Days (+Extend Access)
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: '+7 Days (Default)', val: 7 },
-                { label: '+14 Days (2 Wks)', val: 14 },
-                { label: '+30 Days (1 Mo)', val: 30 },
-                { label: '+60 Days', val: 60 },
-                { label: '+90 Days (3 Mo)', val: 90 },
-                { label: '+365 Days (1 Yr)', val: 365 },
-              ].map((btn) => (
-                <button
-                  key={btn.val}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => handleAdjustDays(btn.val)}
-                  className="px-2.5 py-2 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-xl border border-emerald-200 dark:border-emerald-800/80 cursor-pointer transition-colors disabled:opacity-50"
-                >
-                  {btn.label}
-                </button>
-              ))}
+          {!expiryModeOn ? (
+            <div className="p-4 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/60 text-xs text-slate-700 dark:text-slate-300 text-center space-y-2">
+              <p className="font-semibold text-[#2B547E] dark:text-blue-300">
+                Expiry mode is disabled for this account.
+              </p>
+              <p className="text-slate-500 dark:text-slate-400">
+                This teacher will not see any expiry warnings or countdown badges. To schedule an expiration, switch Expiry Mode to ON above.
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              {/* Quick Add Days */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Quick Add Days (+Extend Access)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: '+7 Days (Default)', val: 7 },
+                    { label: '+14 Days (2 Wks)', val: 14 },
+                    { label: '+30 Days (1 Mo)', val: 30 },
+                    { label: '+60 Days', val: 60 },
+                    { label: '+90 Days (3 Mo)', val: 90 },
+                    { label: '+365 Days (1 Yr)', val: 365 },
+                  ].map((btn) => (
+                    <button
+                      key={btn.val}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handleAdjustDays(btn.val)}
+                      className="px-2.5 py-2 text-xs font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 rounded-xl border border-emerald-200 dark:border-emerald-800/80 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Quick Remove Days */}
-          <div>
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-              Quick Remove Days (-Reduce Access)
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {[
-                { label: '-1 Day', val: -1 },
-                { label: '-3 Days', val: -3 },
-                { label: '-7 Days', val: -7 },
-                { label: '-30 Days', val: -30 },
-                { label: 'Expire Now', val: -Math.max(1, daysRemaining + 1) },
-              ].map((btn, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  disabled={loading}
-                  onClick={() => handleAdjustDays(btn.val)}
-                  className="px-2.5 py-2 text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl border border-rose-200 dark:border-rose-800/80 cursor-pointer transition-colors disabled:opacity-50"
-                >
-                  {btn.label}
-                </button>
-              ))}
-            </div>
-          </div>
+              {/* Quick Remove Days */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
+                  Quick Remove Days (-Reduce Access)
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { label: '-1 Day', val: -1 },
+                    { label: '-3 Days', val: -3 },
+                    { label: '-7 Days', val: -7 },
+                    { label: '-30 Days', val: -30 },
+                    { label: 'Expire Now', val: -Math.max(1, daysRemaining + 1) },
+                  ].map((btn, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      disabled={loading}
+                      onClick={() => handleAdjustDays(btn.val)}
+                      className="px-2.5 py-2 text-xs font-semibold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60 rounded-xl border border-rose-200 dark:border-rose-800/80 cursor-pointer transition-colors disabled:opacity-50"
+                    >
+                      {btn.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-          {/* Custom Days Input */}
-          <form onSubmit={handleCustomDaysSubmit} className="space-y-1.5">
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Custom Days Adjustment (+/-)
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="number"
-                value={customDays}
-                onChange={(e) => setCustomDays(e.target.value)}
-                placeholder="e.g. 15 or -5"
-                className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
-              />
-              <button
-                type="submit"
-                disabled={loading || !customDays}
-                className="px-4 py-2 text-xs font-semibold bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl cursor-pointer transition-colors"
+              {/* Custom Days Input */}
+              <form onSubmit={handleCustomDaysSubmit} className="space-y-1.5">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Custom Days Adjustment (+/-)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    value={customDays}
+                    onChange={(e) => setCustomDays(e.target.value)}
+                    placeholder="e.g. 15 or -5"
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !customDays}
+                    className="px-4 py-2 text-xs font-semibold bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl cursor-pointer transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
+              </form>
+
+              {/* Direct Date Picker */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSetExactDate();
+                }}
+                className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-700"
               >
-                Apply
-              </button>
-            </div>
-          </form>
-
-          {/* Direct Date Picker */}
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleSetExactDate();
-            }}
-            className="space-y-1.5 pt-2 border-t border-slate-200 dark:border-slate-700"
-          >
-            <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-              Or Set Specific Expiry Date
-            </label>
-            <div className="flex gap-2">
-              <input
-                type="date"
-                value={customDate}
-                onChange={(e) => setCustomDate(e.target.value)}
-                className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
-              />
-              <button
-                type="submit"
-                disabled={loading || !customDate}
-                className="px-4 py-2 text-xs font-semibold bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl cursor-pointer transition-colors"
-              >
-                Set Date
-              </button>
-            </div>
-          </form>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  Or Set Specific Expiry Date
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="date"
+                    value={customDate}
+                    onChange={(e) => setCustomDate(e.target.value)}
+                    className="flex-1 px-3 py-2 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E]"
+                  />
+                  <button
+                    type="submit"
+                    disabled={loading || !customDate}
+                    className="px-4 py-2 text-xs font-semibold bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 text-white rounded-xl cursor-pointer transition-colors"
+                  >
+                    Set Date
+                  </button>
+                </div>
+              </form>
+            </>
+          )}
         </div>
 
         {/* Footer */}

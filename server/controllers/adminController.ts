@@ -34,9 +34,10 @@ export async function listAllTeachers(req: Request, res: Response) {
     studentCounts.forEach((s) => studentCountMap.set(s._id, s.count));
 
     const formatted = teachers.map((t) => {
-      const expiryTime = t.expiresAt ? new Date(t.expiresAt).getTime() : Date.now() + 7 * 86400000;
-      const isExpired = expiryTime < Date.now();
-      const daysRemaining = Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24));
+      const hasExpiry = t.expiryMode !== false;
+      const expiryTime = (hasExpiry && t.expiresAt) ? new Date(t.expiresAt).getTime() : 0;
+      const isExpired = hasExpiry ? (expiryTime < Date.now()) : false;
+      const daysRemaining = hasExpiry ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
 
       return {
         id: t._id.toString(),
@@ -52,7 +53,8 @@ export async function listAllTeachers(req: Request, res: Response) {
         isDeletionLocked: !!t.isDeletionLocked,
         mustChangePassword: !!t.mustChangePassword,
         fullNameLocked: !!t.fullNameLocked,
-        expiresAt: t.expiresAt || new Date(expiryTime).toISOString(),
+        expiryMode: hasExpiry,
+        expiresAt: hasExpiry ? (t.expiresAt || new Date(expiryTime).toISOString()) : null,
         isExpired,
         daysRemaining,
         createdAt: t.createdAt,
@@ -459,7 +461,7 @@ export async function inspectTeacherData(req: Request, res: Response) {
 
 export async function updateTeacherExpiry(req: Request, res: Response) {
   const { teacherId } = req.params;
-  const { daysToAdd, daysDelta, newExpiryDate, expiresAt } = req.body;
+  const { expiryMode, daysToAdd, daysDelta, newExpiryDate, expiresAt } = req.body;
 
   if (!teacherId || !ObjectId.isValid(teacherId)) {
     return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
@@ -472,8 +474,27 @@ export async function updateTeacherExpiry(req: Request, res: Response) {
       return res.status(404).json({ success: false, message: 'Teacher not found.' });
     }
 
-    let targetIsoDate: string;
+    // 1. If explicitly disabling expiryMode:
+    if (expiryMode === false) {
+      await db.collection('users').updateOne(
+        { _id: teacher._id },
+        { $set: { expiryMode: false }, $unset: { expiresAt: "" } }
+      );
 
+      return res.json({
+        success: true,
+        message: 'Account expiry mode turned OFF (Lifetime access).',
+        data: {
+          expiryMode: false,
+          expiresAt: null,
+          isExpired: false,
+          daysRemaining: undefined,
+        },
+      });
+    }
+
+    // 2. Enabling or adjusting expiry
+    let targetIsoDate: string | null = null;
     const rawDate = newExpiryDate || expiresAt;
     const rawDays = daysToAdd !== undefined ? daysToAdd : daysDelta;
 
@@ -491,16 +512,23 @@ export async function updateTeacherExpiry(req: Request, res: Response) {
       const baseTime = currentExpiryTime > now ? currentExpiryTime : now;
       const newTime = baseTime + numDays * 24 * 60 * 60 * 1000;
       targetIsoDate = new Date(newTime).toISOString();
+    } else if (expiryMode === true) {
+      // Re-enabling expiry mode without explicit date/days: default to 7 days from now or keep existing
+      if (teacher.expiresAt && new Date(teacher.expiresAt).getTime() > Date.now()) {
+        targetIsoDate = teacher.expiresAt;
+      } else {
+        targetIsoDate = new Date(Date.now() + 7 * 86400000).toISOString();
+      }
     } else {
       return res.status(400).json({ success: false, message: 'Please provide either daysToAdd or newExpiryDate.' });
     }
 
     await db.collection('users').updateOne(
       { _id: teacher._id },
-      { $set: { expiresAt: targetIsoDate } }
+      { $set: { expiresAt: targetIsoDate, expiryMode: true } }
     );
 
-    const updatedExpiryTime = new Date(targetIsoDate).getTime();
+    const updatedExpiryTime = new Date(targetIsoDate!).getTime();
     const isExpired = updatedExpiryTime < Date.now();
     const daysRemaining = Math.ceil((updatedExpiryTime - Date.now()) / (1000 * 60 * 60 * 24));
 
@@ -508,6 +536,7 @@ export async function updateTeacherExpiry(req: Request, res: Response) {
       success: true,
       message: 'Teacher account expiry updated successfully.',
       data: {
+        expiryMode: true,
         expiresAt: targetIsoDate,
         isExpired,
         daysRemaining,
@@ -516,5 +545,411 @@ export async function updateTeacherExpiry(req: Request, res: Response) {
   } catch (err) {
     console.error(err);
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
+// 10. New User Default Settings
+export async function getNewUserDefaults(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const settings = await db.collection('system_settings').findOne({ _id: 'new_user_defaults' as any });
+    return res.json({
+      success: true,
+      data: {
+        expiryMode: settings ? settings.expiryMode !== false : true,
+        canDeleteAccount: settings ? settings.canDeleteAccount === true : false,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch default settings.' });
+  }
+}
+
+export async function updateNewUserDefaults(req: Request, res: Response) {
+  try {
+    const { expiryMode, canDeleteAccount } = req.body;
+    const db = getDatabase();
+    const cleanExpiryMode = expiryMode !== false;
+    const cleanCanDelete = canDeleteAccount === true;
+
+    await db.collection('system_settings').updateOne(
+      { _id: 'new_user_defaults' as any },
+      {
+        $set: {
+          expiryMode: cleanExpiryMode,
+          canDeleteAccount: cleanCanDelete,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      { upsert: true }
+    );
+
+    return res.json({
+      success: true,
+      message: 'New user default settings updated successfully.',
+      data: {
+        expiryMode: cleanExpiryMode,
+        canDeleteAccount: cleanCanDelete,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to update default settings.' });
+  }
+}
+
+// 11. Developer Contact Info
+export async function getDeveloperContact(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const contact = await db.collection('system_settings').findOne({ _id: 'developer_contact' as any });
+    return res.json({
+      success: true,
+      data: {
+        name: contact?.name || '',
+        phone: contact?.phone || '',
+        address: contact?.address || '',
+        email: contact?.email || '',
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch developer contact info.' });
+  }
+}
+
+export async function updateDeveloperContact(req: Request, res: Response) {
+  try {
+    const { name, phone, address, email } = req.body;
+    const db = getDatabase();
+    const data = {
+      name: typeof name === 'string' ? name.trim() : '',
+      phone: typeof phone === 'string' ? phone.trim() : '',
+      address: typeof address === 'string' ? address.trim() : '',
+      email: typeof email === 'string' ? email.trim() : '',
+      updatedAt: new Date().toISOString(),
+    };
+
+    await db.collection('system_settings').updateOne(
+      { _id: 'developer_contact' as any },
+      { $set: data },
+      { upsert: true }
+    );
+
+    return res.json({
+      success: true,
+      message: 'Developer contact info saved successfully.',
+      data,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to update developer contact info.' });
+  }
+}
+
+// 12. Notifications (Admin -> Teacher)
+export async function getTeacherNotifications(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const teacherId = req.user?.userId;
+    if (!teacherId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    const notifications = await db.collection('notifications')
+      .find({ teacherId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    const formatted = notifications.map(n => ({
+      id: n._id.toString(),
+      message: n.message,
+      read: !!n.read,
+      createdAt: n.createdAt,
+      adminUsername: n.adminUsername || 'Administrator',
+    }));
+
+    const unreadCount = formatted.filter(n => !n.read).length;
+
+    return res.json({
+      success: true,
+      data: formatted,
+      unreadCount,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch notifications.' });
+  }
+}
+
+export async function markNotificationsRead(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const teacherId = req.user?.userId;
+    if (!teacherId) {
+      return res.status(401).json({ success: false, message: 'Unauthorized' });
+    }
+
+    await db.collection('notifications').updateMany(
+      { teacherId, read: false },
+      { $set: { read: true } }
+    );
+
+    return res.json({ success: true, message: 'Notifications marked as read.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to mark notifications as read.' });
+  }
+}
+
+export async function getAdminTeacherNotifications(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  try {
+    const db = getDatabase();
+    const notifications = await db.collection('notifications')
+      .find({ teacherId })
+      .sort({ createdAt: -1 })
+      .toArray();
+
+    return res.json({
+      success: true,
+      data: notifications.map(n => ({
+        id: n._id.toString(),
+        message: n.message,
+        read: !!n.read,
+        createdAt: n.createdAt,
+        adminUsername: n.adminUsername || 'Administrator',
+      })),
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to load teacher notifications.' });
+  }
+}
+
+export async function sendTeacherNotification(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  const { message } = req.body;
+
+  if (!message || typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ success: false, message: 'Message text is required.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const teacher = await db.collection('users').findOne({ _id: new ObjectId(teacherId), role: 'teacher' });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found.' });
+    }
+
+    const newNotification = {
+      teacherId,
+      adminId: req.user?.userId || '',
+      adminUsername: req.user?.username || 'Administrator',
+      message: message.trim(),
+      read: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const result = await db.collection('notifications').insertOne(newNotification);
+
+    return res.json({
+      success: true,
+      message: 'Notification sent successfully.',
+      data: {
+        id: result.insertedId.toString(),
+        ...newNotification,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to send notification.' });
+  }
+}
+
+export async function deleteAdminNotification(req: Request, res: Response) {
+  const { notificationId } = req.params;
+  try {
+    const db = getDatabase();
+    const result = await db.collection('notifications').deleteOne({ _id: new ObjectId(notificationId) });
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Notification not found.' });
+    }
+    return res.json({ success: true, message: 'Notification deleted successfully.' });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to delete notification.' });
+  }
+}
+
+// 13. Comprehensive Teacher Info CSV Export
+export async function exportTeacherData(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  try {
+    const db = getDatabase();
+    const teacher = await db.collection('users').findOne({ _id: new ObjectId(teacherId), role: 'teacher' });
+    if (!teacher) {
+      return res.status(404).json({ success: false, message: 'Teacher not found.' });
+    }
+
+    // 1. Classes & Sections
+    const classes = await db.collection('classes').find({ teacherId }).sort({ order: 1, createdAt: 1 }).toArray();
+    const classIds = classes.map(c => c._id.toString());
+    const sections = await db.collection('sections').find({ classId: { $in: classIds } }).sort({ order: 1, createdAt: 1 }).toArray();
+    const sectionIds = sections.map(s => s._id.toString());
+
+    // 2. Students
+    const students = await db.collection('students').find({ sectionId: { $in: sectionIds } }).sort({ rollNumber: 1 }).toArray();
+
+    // 3. Assessments
+    const exams = await db.collection('examinations').find({ classId: { $in: classIds } }).toArray();
+    const assignments = await db.collection('assignments').find({ classId: { $in: classIds } }).toArray();
+
+    // 4. Marks
+    const marks = await db.collection('marks').find({ sectionId: { $in: sectionIds } }).toArray();
+
+    // 5. Attendance
+    const attendanceRecords = await db.collection('attendance').find({ sectionId: { $in: sectionIds } }).toArray();
+
+    // Maps
+    const classMap = new Map(classes.map(c => [c._id.toString(), c]));
+    const sectionMap = new Map(sections.map(s => [s._id.toString(), s]));
+
+    // Map student attendance
+    // attendance item has records: [{ studentId, status: 'present' | 'absent' }]
+    const studentAttendanceMap = new Map<string, { total: number; present: number; absent: number }>();
+    attendanceRecords.forEach(att => {
+      if (Array.isArray(att.records)) {
+        att.records.forEach((r: any) => {
+          const sId = r.studentId?.toString();
+          if (!sId) return;
+          const curr = studentAttendanceMap.get(sId) || { total: 0, present: 0, absent: 0 };
+          curr.total += 1;
+          if (r.status === 'present') curr.present += 1;
+          else if (r.status === 'absent') curr.absent += 1;
+          studentAttendanceMap.set(sId, curr);
+        });
+      }
+    });
+
+    // Map student marks
+    // marks item: { studentId, assessmentType, assessmentId, score, maxScore }
+    const examMap = new Map(exams.map(e => [e._id.toString(), e]));
+    const assignmentMap = new Map(assignments.map(a => [a._id.toString(), a]));
+    const studentMarksMap = new Map<string, string[]>();
+
+    marks.forEach(m => {
+      const sId = m.studentId?.toString();
+      if (!sId) return;
+      let assessTitle = 'Assessment';
+      if (m.assessmentType === 'exam') {
+        const e = examMap.get(m.assessmentId?.toString());
+        assessTitle = e ? `Exam: ${e.name}` : 'Exam';
+      } else {
+        const a = assignmentMap.get(m.assessmentId?.toString());
+        assessTitle = a ? `Assignment: ${a.title}` : 'Assignment';
+      }
+      const scoreStr = `${assessTitle} (${m.score ?? 'N/A'}/${m.maxScore ?? 'N/A'})`;
+      const list = studentMarksMap.get(sId) || [];
+      list.push(scoreStr);
+      studentMarksMap.set(sId, list);
+    });
+
+    // Generate CSV
+    const rows: string[] = [];
+
+    const escapeCsv = (val: any) => {
+      if (val === undefined || val === null) return '""';
+      const str = String(val).replace(/"/g, '""');
+      return `"${str}"`;
+    };
+
+    // SECTION 1: TEACHER PROFILE
+    rows.push('--- TEACHER PROFILE ---');
+    rows.push(['Field', 'Value'].map(escapeCsv).join(','));
+    rows.push(['Username', teacher.username].map(escapeCsv).join(','));
+    rows.push(['Full Name', teacher.fullName || 'N/A'].map(escapeCsv).join(','));
+    rows.push(['Phone Number', teacher.phoneNumber || 'N/A'].map(escapeCsv).join(','));
+    rows.push(['Institution / College', teacher.college || 'N/A'].map(escapeCsv).join(','));
+    rows.push(['Date of Birth', teacher.dob || 'N/A'].map(escapeCsv).join(','));
+    rows.push(['Account Status', (teacher.status || 'active').toUpperCase()].map(escapeCsv).join(','));
+    rows.push(['Expiry Mode', teacher.expiryMode !== false ? 'ON' : 'OFF (Lifetime Access)'].map(escapeCsv).join(','));
+    rows.push(['Expiry Date', teacher.expiryMode !== false && teacher.expiresAt ? new Date(teacher.expiresAt).toLocaleDateString() : 'No Expiry'].map(escapeCsv).join(','));
+    rows.push(['Account Deletion Lock', teacher.isDeletionLocked ? 'Locked' : 'Unlocked'].map(escapeCsv).join(','));
+    rows.push(['Created Date', teacher.createdAt ? new Date(teacher.createdAt).toLocaleDateString() : 'N/A'].map(escapeCsv).join(','));
+    rows.push('');
+
+    // SECTION 2: CLASSES & SECTIONS SUMMARY
+    rows.push('--- CLASSES & SECTIONS SUMMARY ---');
+    rows.push(['Class Name', 'Section Name', 'Academic Year', 'Attendance Feature', 'Created Date'].map(escapeCsv).join(','));
+    if (sections.length === 0) {
+      rows.push(['No sections created yet', '', '', '', ''].map(escapeCsv).join(','));
+    } else {
+      sections.forEach(sec => {
+        const cls = classMap.get(sec.classId);
+        rows.push([
+          cls ? cls.name : 'Unknown Class',
+          sec.name,
+          sec.academicYear || 'N/A',
+          cls?.attendanceEnabled ? 'Enabled' : 'Disabled',
+          sec.createdAt ? new Date(sec.createdAt).toLocaleDateString() : 'N/A',
+        ].map(escapeCsv).join(','));
+      });
+    }
+    rows.push('');
+
+    // SECTION 3: STUDENTS ROSTER & ACADEMIC PERFORMANCE
+    rows.push('--- STUDENTS ROSTER & ACADEMIC PERFORMANCE ---');
+    rows.push([
+      'Class',
+      'Section',
+      'Roll No',
+      'Symbol No',
+      'Student Name',
+      'Student Contact',
+      'Parent Contact',
+      'Attendance (Present/Total)',
+      'Attendance %',
+      'Assessments & Marks Breakdown',
+    ].map(escapeCsv).join(','));
+
+    if (students.length === 0) {
+      rows.push(['No students registered yet', '', '', '', '', '', '', '', '', ''].map(escapeCsv).join(','));
+    } else {
+      students.forEach(st => {
+        const sec = sectionMap.get(st.sectionId);
+        const cls = sec ? classMap.get(sec.classId) : null;
+        const sId = st._id.toString();
+        const att = studentAttendanceMap.get(sId);
+        const attText = att ? `${att.present}/${att.total}` : '0/0';
+        const attPct = att && att.total > 0 ? `${Math.round((att.present / att.total) * 100)}%` : 'N/A';
+        const marksList = studentMarksMap.get(sId) || [];
+        const marksStr = marksList.length > 0 ? marksList.join('; ') : 'No marks recorded';
+
+        rows.push([
+          cls ? cls.name : 'Unknown',
+          sec ? sec.name : 'Unknown',
+          st.rollNumber,
+          st.symbolNumber || 'N/A',
+          st.name,
+          st.contactNumber || 'N/A',
+          st.parentContactNumber || 'N/A',
+          attText,
+          attPct,
+          marksStr,
+        ].map(escapeCsv).join(','));
+      });
+    }
+
+    const csvContent = rows.join('\r\n');
+    const safeUsername = teacher.username.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="teacher_${safeUsername}_complete_data.csv"`);
+    return res.send('\uFEFF' + csvContent);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to export teacher data.' });
   }
 }
