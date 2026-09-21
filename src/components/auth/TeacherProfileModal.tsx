@@ -572,7 +572,7 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </p>
                 {user.isDeletionLocked && (
                   <p className="text-[11px] text-amber-700 dark:text-amber-400 flex items-center gap-1 mt-1 font-medium">
-                    <Lock className="w-3 h-3" /> Account deletion is administratively locked.
+                    <Lock className="w-3 h-3" />  
                   </p>
                 )}
               </div>
