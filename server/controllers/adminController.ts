@@ -377,7 +377,6 @@ export async function updateTeacherProfileByAdmin(req: Request, res: Response) {
         });
       }
       updateFields.passwordHash = await hashPassword(cleanPass);
-      updateFields.plainPassword = cleanPass;
       updateFields.mustChangePassword = false;
       updateFields.tokenVersion = (teacher.tokenVersion || 0) + 1;
     }
@@ -388,7 +387,10 @@ export async function updateTeacherProfileByAdmin(req: Request, res: Response) {
 
     await db.collection('users').updateOne(
       { _id: new ObjectId(teacherId) },
-      { $set: updateFields }
+      { 
+        $set: updateFields,
+        $unset: { plainPassword: "", adminPasswordRecord: "" }
+      }
     );
 
     return res.json({ success: true, message: 'Teacher profile updated successfully.' });
