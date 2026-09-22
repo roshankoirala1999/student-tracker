@@ -572,11 +572,14 @@ export async function getNewUserDefaults(req: Request, res: Response) {
   try {
     const db = getDatabase();
     const settings = await db.collection('system_settings').findOne({ _id: 'new_user_defaults' as any });
+    const expiryMode = settings ? settings.expiryMode !== false : true;
+    const canDelete = settings ? (settings.canDeleteAccount === true || settings.allowAccountDeletion === true) : true;
     return res.json({
       success: true,
       data: {
-        expiryMode: settings ? settings.expiryMode !== false : true,
-        canDeleteAccount: settings ? settings.canDeleteAccount === true : false,
+        expiryMode,
+        canDeleteAccount: canDelete,
+        allowAccountDeletion: canDelete,
       },
     });
   } catch (err) {
@@ -587,10 +590,12 @@ export async function getNewUserDefaults(req: Request, res: Response) {
 
 export async function updateNewUserDefaults(req: Request, res: Response) {
   try {
-    const { expiryMode, canDeleteAccount } = req.body;
+    const { expiryMode, canDeleteAccount, allowAccountDeletion } = req.body;
     const db = getDatabase();
     const cleanExpiryMode = expiryMode !== false;
-    const cleanCanDelete = canDeleteAccount === true;
+    const cleanCanDelete = canDeleteAccount !== undefined
+      ? canDeleteAccount === true
+      : allowAccountDeletion === true;
 
     await db.collection('system_settings').updateOne(
       { _id: 'new_user_defaults' as any },
@@ -598,6 +603,7 @@ export async function updateNewUserDefaults(req: Request, res: Response) {
         $set: {
           expiryMode: cleanExpiryMode,
           canDeleteAccount: cleanCanDelete,
+          allowAccountDeletion: cleanCanDelete,
           updatedAt: new Date().toISOString(),
         },
       },
@@ -610,6 +616,7 @@ export async function updateNewUserDefaults(req: Request, res: Response) {
       data: {
         expiryMode: cleanExpiryMode,
         canDeleteAccount: cleanCanDelete,
+        allowAccountDeletion: cleanCanDelete,
       },
     });
   } catch (err) {

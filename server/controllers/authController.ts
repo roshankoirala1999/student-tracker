@@ -389,17 +389,7 @@ export async function getMe(req: Request, res: Response) {
     let isProfileIncomplete = false;
 
     if (isTeacher) {
-      // 1. Full Name (compulsory)
-      if (!user?.fullName || typeof user.fullName !== 'string' || user.fullName.trim() === '') {
-        missingFields.push('Full Name');
-      }
-
-      // 2. Institution / College (compulsory)
-      if (!user?.college || typeof user.college !== 'string' || user.college.trim() === '') {
-        missingFields.push('College / Institution');
-      }
-
-      // 3. Required Institutional Profile Questions
+      // Required Institutional Profile Questions
       const requiredQuestions = await db.collection('profile_questions')
         .find({ required: true })
         .sort({ order: 1, createdAt: 1 })
@@ -477,20 +467,12 @@ export async function updateTeacherProfile(req: Request, res: Response) {
 
     const updateFields: any = {};
 
-    // Allow teacher to edit full name 1 time only
-    if (fullName !== undefined) {
-      if (user.fullNameLocked) {
-        return res.status(403).json({
-          success: false,
-          message: 'Full Name has already been set and locked. Contact administrator to update.',
-        });
-      }
-      const cleanFullName = typeof fullName === 'string' ? fullName.trim() : '';
-      if (!cleanFullName) {
-        return res.status(400).json({ success: false, message: 'Full Name cannot be empty.' });
-      }
-      updateFields.fullName = cleanFullName;
-      updateFields.fullNameLocked = true;
+    // Full name, phone number, and username cannot be changed by teacher (Managed by administrator)
+    if (fullName !== undefined && fullName !== user.fullName) {
+      return res.status(403).json({
+        success: false,
+        message: 'Full Name cannot be changed. It is managed by the administrator.',
+      });
     }
 
     if (college !== undefined) {
@@ -552,12 +534,6 @@ export async function updateTeacherProfile(req: Request, res: Response) {
 
     let missingFields: string[] = [];
     if (updatedUser?.role === 'teacher') {
-      if (!updatedUser?.fullName || typeof updatedUser.fullName !== 'string' || updatedUser.fullName.trim() === '') {
-        missingFields.push('Full Name');
-      }
-      if (!updatedUser?.college || typeof updatedUser.college !== 'string' || updatedUser.college.trim() === '') {
-        missingFields.push('College / Institution');
-      }
       const requiredQuestions = await db.collection('profile_questions')
         .find({ required: true })
         .sort({ order: 1, createdAt: 1 })

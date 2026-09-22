@@ -140,10 +140,15 @@ api.delete('/admin/teachers/:teacherId', requireMasterAdmin, adminCtrl.deleteTea
 // New User Default Settings
 api.get('/admin/new-user-defaults', requireMasterAdmin, adminCtrl.getNewUserDefaults);
 api.put('/admin/new-user-defaults', requireMasterAdmin, adminCtrl.updateNewUserDefaults);
+api.get('/admin/settings/new-user-defaults', requireMasterAdmin, adminCtrl.getNewUserDefaults);
+api.put('/admin/settings/new-user-defaults', requireMasterAdmin, adminCtrl.updateNewUserDefaults);
 
 // Developer Contact Info
 api.get('/developer-contact', adminCtrl.getDeveloperContact);
+api.get('/admin/developer-contact', requireMasterAdmin, adminCtrl.getDeveloperContact);
+api.get('/admin/settings/developer-contact', requireMasterAdmin, adminCtrl.getDeveloperContact);
 api.put('/admin/developer-contact', requireMasterAdmin, adminCtrl.updateDeveloperContact);
+api.put('/admin/settings/developer-contact', requireMasterAdmin, adminCtrl.updateDeveloperContact);
 
 // Notifications (Admin -> Teacher)
 api.get('/notifications', adminCtrl.getTeacherNotifications);

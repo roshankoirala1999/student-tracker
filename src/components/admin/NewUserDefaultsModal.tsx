@@ -26,7 +26,10 @@ export const NewUserDefaultsModal: React.FC<Props> = ({ isOpen, onClose, onSucce
         .then((res) => {
           if (res.success && res.data) {
             setExpiryMode(res.data.expiryMode !== false);
-            setAllowAccountDeletion(res.data.allowAccountDeletion !== false);
+            const canDel = (res.data as any).canDeleteAccount !== undefined
+              ? (res.data as any).canDeleteAccount
+              : res.data.allowAccountDeletion !== false;
+            setAllowAccountDeletion(canDel);
           }
         })
         .catch((err) => {
@@ -49,6 +52,7 @@ export const NewUserDefaultsModal: React.FC<Props> = ({ isOpen, onClose, onSucce
       body: JSON.stringify({
         expiryMode,
         allowAccountDeletion,
+        canDeleteAccount: allowAccountDeletion,
       }),
     });
 

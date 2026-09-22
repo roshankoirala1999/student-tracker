@@ -60,7 +60,7 @@ export const HomeView: React.FC<Props> = ({
           <div className="flex items-center justify-between px-1">
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
               <BookOpen className="w-3.5 h-3.5" />
-              <span>Academic Classes ({classes.length})</span>
+              <span>{classes.length === 1 ? 'Existing Class' : 'Existing Classes'} ({classes.length})</span>
             </h3>
           </div>
 

@@ -26,7 +26,7 @@ const MainApp: React.FC = () => {
   const [sectionsByClass, setSectionsByClass] = useState<Record<string, SectionItem[]>>({});
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
-  const [isHomeView, setIsHomeView] = useState<boolean>(false);
+  const [isHomeView, setIsHomeView] = useState<boolean>(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
@@ -39,13 +39,11 @@ const MainApp: React.FC = () => {
     setClassesLoading(false);
     if (res.success && res.data) {
       setClasses(res.data);
-      // If current selected class is not in the list, or none selected, pick the first unless user chose home view
-      if (res.data.length > 0) {
-        if (!isHomeView && (!selectedClassId || !res.data.some((c) => c.id === selectedClassId))) {
-          setSelectedClassId(res.data[0].id);
-        }
-      } else {
+      // If current selected class is not in the list, reset to home view
+      if (selectedClassId && !res.data.some((c) => c.id === selectedClassId)) {
         setSelectedClassId(null);
+        setSelectedSectionId(null);
+        setIsHomeView(true);
       }
     }
   };
@@ -67,10 +65,13 @@ const MainApp: React.FC = () => {
         setViewMode('admin');
       } else {
         setViewMode('app');
+        setIsHomeView(true);
+        setSelectedClassId(null);
+        setSelectedSectionId(null);
         loadClasses();
       }
     }
-  }, [user]);
+  }, [user?.id, user?.role]);
 
   useEffect(() => {
     if (selectedClassId && !isAdmin) {
