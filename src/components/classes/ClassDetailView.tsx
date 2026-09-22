@@ -238,16 +238,16 @@ export const ClassDetailView: React.FC<Props> = ({
   const enrolledPercentile = Math.round((totalStudents / totalCapacity) * 100);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Top Class Banner & Actions with solid class border */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border-2 border-[#2B547E] dark:border-blue-500/80 p-5 sm:p-6 shadow-sm transition-colors space-y-5">
+      <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border-2 border-[#2B547E] dark:border-blue-500/80 p-5 sm:p-6 shadow-sm transition-colors space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {onBack && (
               <button
                 type="button"
                 onClick={onBack}
-                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+                className="p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer shrink-0 hover:-translate-x-0.5"
                 title="Back to Classes"
                 aria-label="Back to Classes"
               >
@@ -257,7 +257,7 @@ export const ClassDetailView: React.FC<Props> = ({
 
             <div>
               <div className="text-xs font-bold text-[#2B547E] dark:text-blue-400 uppercase tracking-wider mb-0.5 flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#2B547E] dark:bg-blue-400" />
+                <span className="w-2 h-2 rounded-full bg-[#2B547E] dark:bg-blue-400 animate-pulse" />
                 <span>Class Overview</span>
               </div>
               <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{currentClass.name}</h2>
@@ -265,24 +265,13 @@ export const ClassDetailView: React.FC<Props> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Download Attendance CSV */}
-            <button
-              type="button"
-              onClick={handleDownloadAttendance}
-              className="flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-xs font-semibold transition-colors cursor-pointer"
-              title="Download Class Attendance CSV"
-            >
-              <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-              <span>Attendance Download</span>
-            </button>
-
             {/* Unified + Add Dropdown */}
             <div className="relative" ref={addDropdownRef}>
               <button
                 type="button"
                 disabled={isExpired}
                 onClick={() => setAddDropdownOpen(!addDropdownOpen)}
-                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-colors cursor-pointer shadow-xs"
+                className="flex items-center gap-1.5 px-4 py-2.5 min-h-[40px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs hover:shadow-md hover:-translate-y-0.5 active:translate-y-0"
                 title={isExpired ? 'Account expired (read-only)' : 'Add Section, Exam, or Assignment'}
               >
                 <Plus className="w-3.5 h-3.5" />
@@ -291,7 +280,7 @@ export const ClassDetailView: React.FC<Props> = ({
               </button>
 
               {addDropdownOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs">
+                <div className="absolute right-0 top-full mt-1.5 w-48 bg-white dark:bg-[#141C2B] border border-slate-200 dark:border-slate-700 rounded-xl shadow-xl py-1 z-50 text-xs animate-scale-in">
                   <button
                     type="button"
                     onClick={() => {
@@ -334,7 +323,7 @@ export const ClassDetailView: React.FC<Props> = ({
               type="button"
               disabled={attendanceLoading || isExpired}
               onClick={handleToggleAttendance}
-              className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border text-xs font-semibold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed ${
+              className={`flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border text-xs font-semibold transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed hover:-translate-y-0.5 ${
                 currentClass.attendanceEnabled
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800 text-emerald-800 dark:text-emerald-300'
                   : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400'
@@ -350,7 +339,7 @@ export const ClassDetailView: React.FC<Props> = ({
               type="button"
               disabled={isExpired}
               onClick={() => setDeleteClassModalOpen(true)}
-              className="p-2.5 min-h-[40px] text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer transition-colors"
+              className="p-2.5 min-h-[40px] text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/60 border border-rose-200 dark:border-rose-900/60 disabled:opacity-40 disabled:cursor-not-allowed rounded-xl cursor-pointer transition-all hover:-translate-y-0.5"
               title={isExpired ? 'Account expired (read-only)' : 'Delete Class'}
               aria-label="Delete Class"
             >
@@ -369,44 +358,40 @@ export const ClassDetailView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Single-Line Stats Grid without limit displays */}
+        {/* Minimalist Stats Grid without extra sub-labels */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
-          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Students</div>
-            <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 hover:-translate-y-0.5 transition-all">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Total Students</div>
+            <div className="text-2xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
               {totalStudents}
             </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Enrolled Across Sections</div>
           </div>
 
-          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Sections</div>
-            <div className="text-xl font-bold text-[#2B547E] dark:text-blue-400 mt-0.5">
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 hover:-translate-y-0.5 transition-all">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Sections</div>
+            <div className="text-2xl font-bold text-[#2B547E] dark:text-blue-400 mt-0.5">
               {sections.length}
             </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Configured Groups</div>
           </div>
 
-          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Examinations</div>
-            <div className="text-xl font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 hover:-translate-y-0.5 transition-all">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Examinations</div>
+            <div className="text-2xl font-bold text-amber-700 dark:text-amber-400 mt-0.5">
               {examinations.length}
             </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Summative Tests</div>
           </div>
 
-          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Assignments</div>
-            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+          <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3.5 rounded-xl border border-slate-200/80 dark:border-slate-800 hover:-translate-y-0.5 transition-all">
+            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">Assignments</div>
+            <div className="text-2xl font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
               {assignments.length}
             </div>
-            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Continuous Tasks</div>
           </div>
         </div>
       </div>
 
       {/* Sections Section */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
+      <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-base">
             <Users className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
@@ -416,7 +401,7 @@ export const ClassDetailView: React.FC<Props> = ({
             type="button"
             disabled={isExpired}
             onClick={() => setAddSectionModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[38px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 px-3.5 py-2 min-h-[38px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer hover:-translate-y-0.5"
             title={isExpired ? 'Account expired (read-only)' : 'New Section'}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -437,7 +422,7 @@ export const ClassDetailView: React.FC<Props> = ({
                 return (
                   <div
                     key={sec.id}
-                    className="border-2 border-emerald-500/80 dark:border-emerald-500/60 rounded-2xl p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between bg-emerald-50/20 dark:bg-[#0D241E]"
+                    className="border-2 border-emerald-500/80 dark:border-emerald-500/60 rounded-2xl p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between bg-emerald-50/20 dark:bg-[#0D241E] hover:-translate-y-0.5"
                   >
                     <div>
                       <div className="flex items-start justify-between">
@@ -460,7 +445,7 @@ export const ClassDetailView: React.FC<Props> = ({
 
                       {/* Students Count */}
                       <div className="mt-4 p-3 bg-white/70 dark:bg-[#081713] rounded-xl border border-emerald-500/20">
-                        <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Students Enrolled</div>
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Students</div>
                         <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-0.5">
                           {count}
                         </div>
@@ -471,7 +456,7 @@ export const ClassDetailView: React.FC<Props> = ({
                       <button
                         type="button"
                         onClick={() => onSelectSection(sec.id)}
-                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs hover:translate-x-0.5"
                       >
                         <span>Open Section</span>
                         <ArrowRight className="w-3.5 h-3.5" />
@@ -483,31 +468,41 @@ export const ClassDetailView: React.FC<Props> = ({
 
               {/* Combined Section Card (All Students Sorted by Section) */}
               <div
-                className="border-2 border-indigo-500/80 dark:border-indigo-500/60 rounded-2xl p-5 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between bg-indigo-50/20 dark:bg-[#141B38]"
+                className="border-2 border-indigo-500/80 dark:border-indigo-500/60 rounded-2xl p-5 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between bg-indigo-50/20 dark:bg-[#141B38] hover:-translate-y-0.5"
               >
                 <div>
                   <div className="flex items-start justify-between">
                     <div>
                       <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
-                        Default Combined Section
+                        Combined Section
                       </span>
                       <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base mt-0.5">Combined</h4>
                     </div>
                   </div>
 
                   <div className="mt-4 p-3 bg-white/70 dark:bg-[#0C1226] rounded-xl border border-indigo-500/20">
-                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Students Across Sections</div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Students</div>
                     <div className="text-xl font-extrabold text-indigo-700 dark:text-indigo-300 mt-0.5">
                       {totalStudents}
                     </div>
                   </div>
                 </div>
 
-                <div className="mt-5 pt-3 border-t border-indigo-500/20 flex items-center justify-end">
+                <div className="mt-5 pt-3 border-t border-indigo-500/20 flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadAttendance}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                    title="Download Attendance CSV for all students in class"
+                  >
+                    <Download className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                    <span>Attendance</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => onSelectSection('combined')}
-                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs hover:translate-x-0.5"
                   >
                     <span>Open Combined</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -522,22 +517,17 @@ export const ClassDetailView: React.FC<Props> = ({
       {/* Dynamic Assessments: Examinations & Assignments */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Dynamic Class-Specific Examinations */}
-        <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
+        <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
-                <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
-                <span>Class Examinations</span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Applied across all sections of {currentClass.name}
-              </p>
+            <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
+              <Award className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+              <span>Class Examinations</span>
             </div>
             <button
               type="button"
               disabled={isExpired}
               onClick={() => setExamModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer hover:-translate-y-0.5"
               title={isExpired ? 'Account expired (read-only)' : 'Add Exam'}
             >
               <Plus className="w-3.5 h-3.5" />
@@ -554,7 +544,7 @@ export const ClassDetailView: React.FC<Props> = ({
               examinations.map((ex) => (
                 <div
                   key={ex.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs"
+                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs hover:-translate-y-0.5 transition-all"
                 >
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{ex.name}</span>
                   <span className="bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[#2B547E] dark:text-blue-400 font-mono text-[11px] font-bold">
@@ -567,22 +557,17 @@ export const ClassDetailView: React.FC<Props> = ({
         </div>
 
         {/* Dynamic Class Assignments */}
-        <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
+        <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs transition-colors">
           <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
-                <FileText className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
-                <span>Class Assignments</span>
-              </div>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Dynamic coursework columns for {currentClass.name}
-              </p>
+            <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-sm">
+              <FileText className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
+              <span>Class Assignments</span>
             </div>
             <button
               type="button"
               disabled={isExpired}
               onClick={() => setAssignModalOpen(true)}
-              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all cursor-pointer hover:-translate-y-0.5"
               title={isExpired ? 'Account expired (read-only)' : 'Add Assignment'}
             >
               <Plus className="w-3.5 h-3.5" />
@@ -599,7 +584,7 @@ export const ClassDetailView: React.FC<Props> = ({
               assignments.map((asItem) => (
                 <div
                   key={asItem.id}
-                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs"
+                  className="flex items-center justify-between p-3 rounded-xl border border-slate-100 dark:border-slate-800 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs hover:-translate-y-0.5 transition-all"
                 >
                   <span className="font-semibold text-slate-800 dark:text-slate-200">{asItem.name}</span>
                   <span className="bg-white dark:bg-slate-800 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-[#2B547E] dark:text-blue-400 font-mono text-[11px] font-bold">

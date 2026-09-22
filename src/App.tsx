@@ -108,10 +108,25 @@ const MainApp: React.FC = () => {
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || null;
   const currentSections = selectedClassId ? sectionsByClass[selectedClassId] || [] : [];
-  const currentSection = currentSections.find((s) => s.id === selectedSectionId) || null;
+  const currentSection: SectionItem | null =
+    selectedSectionId === 'combined' && currentClass
+      ? {
+          id: 'combined',
+          teacherId: currentClass.teacherId,
+          name: 'Combined',
+          classId: currentClass.id,
+          order: 9999,
+          studentCount: currentSections.reduce((sum, s) => sum + (s.studentCount || 0), 0),
+          createdAt: '',
+        }
+      : currentSections.find((s) => s.id === selectedSectionId) || null;
 
   return (
-    <div className="min-h-screen bg-[#F4F6FA] dark:bg-[#0B0F19] flex flex-col font-sans text-slate-800 dark:text-slate-100 transition-colors duration-200">
+    <div className="min-h-screen bg-[#F4F6FA] dark:bg-[#090D16] flex flex-col font-sans text-slate-800 dark:text-slate-100 transition-colors duration-200 relative overflow-x-hidden">
+      {/* Ambient background micro-glows for luxury UI depth */}
+      <div className="fixed top-12 left-1/4 w-96 h-96 bg-blue-500/5 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none animate-glow" />
+      <div className="fixed bottom-10 right-10 w-96 h-96 bg-indigo-500/5 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none animate-glow delay-2" />
+
       <Header
         viewMode={viewMode}
         setViewMode={setViewMode}

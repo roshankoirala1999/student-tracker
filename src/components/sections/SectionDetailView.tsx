@@ -191,13 +191,13 @@ export const SectionDetailView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Top Breadcrumb and Header with solid section border */}
       <div
-        className={`rounded-2xl border-2 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${
+        className={`rounded-2xl border-2 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all backdrop-blur-md ${
           isCombined
-            ? 'bg-indigo-50/20 dark:bg-[#141B38] border-indigo-500/80 dark:border-indigo-500/70'
-            : 'bg-emerald-50/20 dark:bg-[#0D241E] border-emerald-500/80 dark:border-emerald-500/70'
+            ? 'bg-indigo-50/30 dark:bg-[#141B38]/90 border-indigo-500/80 dark:border-indigo-500/70'
+            : 'bg-emerald-50/30 dark:bg-[#0D241E]/90 border-emerald-500/80 dark:border-emerald-500/70'
         }`}
       >
         <div>
@@ -218,7 +218,7 @@ export const SectionDetailView: React.FC<Props> = ({
 
           <div className="flex items-center gap-3">
             <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-              {isCombined ? 'Combined (All Students)' : section.name}
+              {isCombined ? 'Combined' : section.name}
             </h2>
             <span
               className={`px-3 py-1 rounded-full text-xs font-bold ${
@@ -238,7 +238,7 @@ export const SectionDetailView: React.FC<Props> = ({
           <button
             type="button"
             onClick={handleDownloadAttendance}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:-translate-y-0.5"
             title="Download Attendance CSV"
           >
             <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
