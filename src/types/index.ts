@@ -222,5 +222,6 @@ export interface TeacherSearchItem {
   username: string;
   fullName: string;
   phoneNumber: string;
+  role?: string;
 }
 

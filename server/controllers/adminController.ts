@@ -796,7 +796,7 @@ export async function sendTeacherNotification(req: Request, res: Response) {
       conversationId: `admin:${teacherId}`,
       senderId: 'admin',
       senderUsername: req.user?.username || 'admin',
-      senderFullName: 'Master Administrator',
+      senderFullName: 'Admin',
       senderRole: req.user?.role || 'master_admin',
       recipientId: teacherId,
       recipientUsername: teacher.username,

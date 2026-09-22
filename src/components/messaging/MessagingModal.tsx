@@ -5,7 +5,6 @@ import {
   Send,
   X,
   ArrowLeft,
-  Crown,
   User,
   Clock,
   Phone,
@@ -119,10 +118,17 @@ export const MessagingModal: React.FC<Props> = ({
     if (fallbackInfo) {
       setActiveParticipant({
         id: targetId,
-        username: fallbackInfo.username || 'User',
-        fullName: fallbackInfo.fullName || '',
+        username: fallbackInfo.username || (targetId === 'admin' ? 'admin' : 'User'),
+        fullName: fallbackInfo.fullName || (targetId === 'admin' ? 'Admin' : ''),
         role: targetId === 'admin' ? 'master_admin' : 'teacher',
         phoneNumber: fallbackInfo.phoneNumber || '',
+      });
+    } else if (targetId === 'admin') {
+      setActiveParticipant({
+        id: 'admin',
+        username: 'admin',
+        fullName: 'Admin',
+        role: 'master_admin',
       });
     }
     fetchThread(targetId);
@@ -168,6 +174,55 @@ export const MessagingModal: React.FC<Props> = ({
         setSearchResults([]);
       }
     }, 300);
+  };
+
+  // Handle Enter key on search bar to instantly open chatbot
+  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+
+    const query = searchQuery.trim();
+    if (!query) return;
+
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // If query matches admin (for teacher)
+    if (!isAdmin && ('admin'.includes(query.toLowerCase()) || query.toLowerCase().includes('admin'))) {
+      handleSelectParticipant('admin', {
+        id: 'admin',
+        username: 'admin',
+        fullName: 'Admin',
+        role: 'master_admin',
+      });
+      return;
+    }
+
+    // If search results already loaded, select the first match
+    if (searchResults.length > 0) {
+      handleSelectParticipant(searchResults[0].id, searchResults[0]);
+      return;
+    }
+
+    // Perform immediate search and select top result
+    setIsSearching(true);
+    try {
+      const res = await apiRequest<TeacherSearchItem[]>(
+        `/api/messages/search-teachers?q=${encodeURIComponent(query)}`
+      );
+      setIsSearching(false);
+      setHasSearched(true);
+      if (res.success && res.data && res.data.length > 0) {
+        setSearchResults(res.data);
+        handleSelectParticipant(res.data[0].id, res.data[0]);
+      } else {
+        setSearchResults([]);
+      }
+    } catch {
+      setIsSearching(false);
+      setHasSearched(true);
+    }
   };
 
   // Send message
@@ -217,10 +272,6 @@ export const MessagingModal: React.FC<Props> = ({
 
       if (initialTargetTeacher) {
         handleSelectParticipant(initialTargetTeacher.id, initialTargetTeacher);
-      } else if (!isAdmin) {
-        // Teacher default: open admin thread or first conversation
-        setSelectedParticipantId('admin');
-        fetchThread('admin');
       }
     } else {
       setSelectedParticipantId(null);
@@ -271,7 +322,7 @@ export const MessagingModal: React.FC<Props> = ({
                 </span>
               </h2>
               <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {isAdmin ? 'Connect with teachers and respond to inquiries' : 'Communicate with Administrator and other teachers'}
+                {isAdmin ? 'Connect with teachers and respond to inquiries' : 'Communicate with Admin and other teachers'}
               </p>
             </div>
           </div>
@@ -294,7 +345,7 @@ export const MessagingModal: React.FC<Props> = ({
               selectedParticipantId ? 'hidden md:flex' : 'flex'
             }`}
           >
-            {/* Search Bar for Teachers (Search by username or 10-digit phone number) */}
+            {/* Search Bar for Teachers (Search by username or 10-digit phone number, or admin) */}
             <div className="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2">
               <div className="relative">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
@@ -302,7 +353,8 @@ export const MessagingModal: React.FC<Props> = ({
                   type="text"
                   value={searchQuery}
                   onChange={handleSearchChange}
-                  placeholder="Search by username or 10-digit phone..."
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="write username to chat with other teacher or admin to chat with admin"
                   className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 transition-colors"
                 />
                 {isSearching && (
@@ -318,7 +370,7 @@ export const MessagingModal: React.FC<Props> = ({
                   </div>
                   {searchResults.length === 0 ? (
                     <div className="text-center py-3 text-xs text-slate-500 dark:text-slate-400">
-                      No teacher found matching this username or phone number.
+                      No results found. Type a username, phone number, or admin.
                     </div>
                   ) : (
                     searchResults.map((teacher) => (
@@ -329,9 +381,16 @@ export const MessagingModal: React.FC<Props> = ({
                         className="w-full text-left p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors flex items-center justify-between cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
                       >
                         <div className="min-w-0 pr-2">
-                          <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                            {teacher.fullName || teacher.username}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
+                              {teacher.fullName || teacher.username}
+                            </p>
+                            {teacher.id === 'admin' && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
+                                Admin
+                              </span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
                             <span>@{teacher.username}</span>
                             {teacher.phoneNumber && (
@@ -349,37 +408,6 @@ export const MessagingModal: React.FC<Props> = ({
                     ))
                   )}
                 </div>
-              )}
-
-              {/* Pinned Quick Action: Message Administrator (for teachers) */}
-              {!isAdmin && (
-                <button
-                  type="button"
-                  onClick={() => handleSelectParticipant('admin')}
-                  className={`w-full px-3 py-2.5 rounded-xl border text-left transition-all flex items-center justify-between cursor-pointer ${
-                    selectedParticipantId === 'admin'
-                      ? 'bg-amber-500/10 dark:bg-amber-500/20 border-amber-400 dark:border-amber-500 shadow-2xs'
-                      : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900/50 hover:bg-amber-100/50 dark:hover:bg-amber-950/40'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-lg bg-amber-500 text-slate-950 flex items-center justify-center font-black shadow-xs shrink-0">
-                      <Crown className="w-4 h-4 fill-slate-950" />
-                    </div>
-                    <div>
-                      {/* Admin Chat Name: BOLD and distinctive color */}
-                      <p className="text-xs font-black text-amber-600 dark:text-amber-400 tracking-wide flex items-center gap-1">
-                        <span>Master Administrator</span>
-                      </p>
-                      <p className="text-[10px] text-slate-500 dark:text-slate-400">
-                        Official Administration Support
-                      </p>
-                    </div>
-                  </div>
-                  <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 shrink-0">
-                    Open
-                  </span>
-                </button>
               )}
             </div>
 
@@ -403,7 +431,7 @@ export const MessagingModal: React.FC<Props> = ({
                 </div>
               ) : conversations.length === 0 ? (
                 <div className="py-8 text-center text-xs text-slate-400 px-4">
-                  No conversations yet. Search for a teacher above to start a conversation.
+                  No conversations yet. Search above to start a conversation.
                 </div>
               ) : (
                 conversations.map((conv) => {
@@ -420,35 +448,33 @@ export const MessagingModal: React.FC<Props> = ({
                       onClick={() => handleSelectParticipant(conv.participantId)}
                       className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 ${
                         isSelected
-                          ? isConvAdmin
-                            ? 'bg-amber-500/10 dark:bg-amber-500/20 border-amber-400 dark:border-amber-500'
-                            : 'bg-blue-50 dark:bg-blue-950/40 border-[#2B547E] dark:border-blue-500'
+                          ? 'bg-blue-50 dark:bg-blue-950/40 border-[#2B547E] dark:border-blue-500'
                           : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
                       }`}
                     >
-                      {/* Avatar */}
+                      {/* Avatar with only slight difference for Admin */}
                       <div
                         className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
                           isConvAdmin
-                            ? 'bg-amber-500 text-slate-950 shadow-xs'
+                            ? 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-800 dark:text-slate-200'
                             : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
                         }`}
                       >
-                        {isConvAdmin ? (
-                          <Crown className="w-4 h-4 fill-slate-950" />
-                        ) : (
-                          <User className="w-4 h-4" />
-                        )}
+                        <User className="w-4 h-4" />
                       </div>
 
                       {/* Info & Last message */}
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center justify-between gap-1 mb-0.5">
-                          {/* Admin name MUST be bold and another colour than teachers */}
                           {isConvAdmin ? (
-                            <span className="text-xs font-black text-amber-600 dark:text-amber-400 truncate">
-                              👑 Master Administrator
-                            </span>
+                            <div className="flex items-center gap-1.5 truncate">
+                              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                Admin
+                              </span>
+                              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
+                                Admin
+                              </span>
+                            </div>
                           ) : (
                             <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
                               {conv.participantFullName || conv.participantUsername}
@@ -512,29 +538,22 @@ export const MessagingModal: React.FC<Props> = ({
                           activeParticipant?.role === 'master_admin' ||
                           activeParticipant?.role === 'administrator' ||
                           activeParticipant?.id === 'admin'
-                            ? 'bg-amber-500 text-slate-950 shadow-xs'
+                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
                             : 'bg-blue-100 dark:bg-blue-950 text-[#2B547E] dark:text-blue-400'
                         }`}
                       >
-                        {activeParticipant?.role === 'master_admin' ||
-                        activeParticipant?.role === 'administrator' ||
-                        activeParticipant?.id === 'admin' ? (
-                          <Crown className="w-5 h-5 fill-slate-950" />
-                        ) : (
-                          <User className="w-5 h-5" />
-                        )}
+                        <User className="w-5 h-5" />
                       </div>
 
                       <div>
-                        {/* Admin Chat Name: BOLD and in distinct amber/gold colour */}
                         {activeParticipant?.role === 'master_admin' ||
                         activeParticipant?.role === 'administrator' ||
                         activeParticipant?.id === 'admin' ? (
                           <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-black text-amber-600 dark:text-amber-400 tracking-wide">
-                              👑 Master Administrator
+                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
+                              Admin
                             </span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300">
+                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
                               Admin
                             </span>
                           </div>
@@ -562,14 +581,19 @@ export const MessagingModal: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => fetchThread(selectedParticipantId)}
-                    title="Refresh thread"
-                    className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                  >
-                    <RefreshCw className="w-4 h-4" />
-                  </button>
+                  {/* Refresh Button for Messages */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
+                      disabled={loadingThread}
+                      title="Refresh messages"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingThread ? 'animate-spin' : ''}`} />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* Messages Scroll Area */}
@@ -609,17 +633,16 @@ export const MessagingModal: React.FC<Props> = ({
                             className={`max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-2xs ${
                               msg.isMine
                                 ? 'bg-[#2B547E] text-white rounded-br-xs'
-                                : isFromAdmin
-                                ? 'bg-amber-50 dark:bg-[#1E2530] text-slate-900 dark:text-slate-100 border border-amber-300 dark:border-amber-700/80 rounded-bl-xs'
                                 : 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-xs'
                             }`}
                           >
                             {/* Sender title if not mine */}
                             {!msg.isMine && (
-                              <div className="mb-1 text-[10px] font-bold">
+                              <div className="mb-1 text-[10px] font-semibold">
                                 {isFromAdmin ? (
-                                  <span className="font-black text-amber-600 dark:text-amber-400 flex items-center gap-1">
-                                    <Crown className="w-3 h-3" /> Master Administrator
+                                  <span className="text-slate-800 dark:text-slate-200 flex items-center gap-1 font-bold">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                    <span>Admin</span>
                                   </span>
                                 ) : (
                                   <span className="text-slate-600 dark:text-slate-300">
@@ -660,7 +683,7 @@ export const MessagingModal: React.FC<Props> = ({
                   </div>
                 )}
 
-                {/* Message Input Box with 300-char limit counter */}
+                {/* Message Input Box with 300-char limit counter & Refresh button */}
                 <form
                   onSubmit={handleSendMessage}
                   className="p-3 bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 shrink-0"
@@ -701,6 +724,16 @@ export const MessagingModal: React.FC<Props> = ({
                     </div>
 
                     <button
+                      type="button"
+                      onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
+                      disabled={loadingThread}
+                      title="Refresh messages"
+                      className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
+                    >
+                      <RefreshCw className={`w-4 h-4 ${loadingThread ? 'animate-spin' : ''}`} />
+                    </button>
+
+                    <button
                       type="submit"
                       disabled={!inputMessage.trim() || sending}
                       className="p-3 rounded-xl bg-[#2B547E] hover:bg-[#355C7D] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer shrink-0"
@@ -725,16 +758,17 @@ export const MessagingModal: React.FC<Props> = ({
                     Select a Conversation
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
-                    Choose an existing conversation from the list or search for a teacher by username or 10-digit phone number.
+                    Choose an existing conversation from the list or search for a teacher by username or 10-digit phone number, or search admin to chat with Admin.
                   </p>
                 </div>
                 {!isAdmin && (
                   <button
                     type="button"
                     onClick={() => handleSelectParticipant('admin')}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-slate-950 transition-colors shadow-xs cursor-pointer"
+                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
                   >
-                    👑 Chat with Master Administrator
+                    <User className="w-3.5 h-3.5" />
+                    <span>Chat with Admin</span>
                   </button>
                 )}
               </div>

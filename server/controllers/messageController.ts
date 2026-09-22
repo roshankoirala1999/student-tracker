@@ -86,7 +86,7 @@ export async function getConversations(req: Request, res: Response) {
           if (isAdminRole(msg.recipientRole) || msg.recipientId === 'admin') {
             participantId = 'admin';
             participantUsername = 'admin';
-            participantFullName = 'Master Administrator';
+            participantFullName = 'Admin';
             participantRole = 'master_admin';
           } else {
             participantId = msg.recipientId;
@@ -99,7 +99,7 @@ export async function getConversations(req: Request, res: Response) {
           if (isAdminRole(msg.senderRole) || msg.senderId === 'admin') {
             participantId = 'admin';
             participantUsername = 'admin';
-            participantFullName = 'Master Administrator';
+            participantFullName = 'Admin';
             participantRole = 'master_admin';
           } else {
             participantId = msg.senderId;
@@ -136,20 +136,6 @@ export async function getConversations(req: Request, res: Response) {
       }
     }
 
-    // If teacher, ensure Admin conversation thread is always accessible
-    if (!isAdmin && !conversationMap.has('admin')) {
-      conversationMap.set('admin', {
-        conversationId: `admin:${user.userId}`,
-        participantId: 'admin',
-        participantUsername: 'admin',
-        participantFullName: 'Master Administrator',
-        participantRole: 'master_admin',
-        lastMessage: 'Tap to start a conversation with the Administrator',
-        lastMessageAt: new Date().toISOString(),
-        unreadCount: 0,
-      });
-    }
-
     // Enrich teacher participants with up-to-date phone number and full name if missing
     const teacherIdsToFetch: ObjectId[] = [];
     conversationMap.forEach((conv) => {
@@ -176,9 +162,6 @@ export async function getConversations(req: Request, res: Response) {
     }
 
     const conversations = Array.from(conversationMap.values()).sort((a, b) => {
-      // Prioritize admin thread if teacher, otherwise latest message
-      if (!isAdmin && a.participantId === 'admin') return -1;
-      if (!isAdmin && b.participantId === 'admin') return 1;
       return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
     });
 
@@ -239,14 +222,27 @@ export async function searchTeachers(req: Request, res: Response) {
       .project({ username: 1, fullName: 1, phoneNumber: 1 })
       .toArray();
 
+    const results = teachers.map((t) => ({
+      id: t._id.toString(),
+      username: t.username,
+      fullName: t.fullName || '',
+      phoneNumber: t.phoneNumber || '',
+    }));
+
+    // If teacher searches and query matches 'admin', include Admin
+    const isUserAdmin = isAdminRole(user.role);
+    if (!isUserAdmin && ('admin'.includes(cleanUsername.toLowerCase()) || cleanUsername.toLowerCase().includes('admin'))) {
+      results.unshift({
+        id: 'admin',
+        username: 'admin',
+        fullName: 'Admin',
+        phoneNumber: '',
+      });
+    }
+
     return res.json({
       success: true,
-      data: teachers.map((t) => ({
-        id: t._id.toString(),
-        username: t.username,
-        fullName: t.fullName || '',
-        phoneNumber: t.phoneNumber || '',
-      })),
+      data: results,
     });
   } catch (err: any) {
     console.error('Error searching teachers:', err);
@@ -315,7 +311,7 @@ export async function getThread(req: Request, res: Response) {
         participant = {
           id: 'admin',
           username: 'admin',
-          fullName: 'Master Administrator',
+          fullName: 'Admin',
           role: 'master_admin',
         };
 
@@ -479,7 +475,7 @@ export async function sendMessage(req: Request, res: Response) {
         }
 
         recipientUsername = 'admin';
-        recipientFullName = 'Master Administrator';
+        recipientFullName = 'Admin';
         recipientRole = 'master_admin';
         conversationId = `admin:${user.userId}`;
       } else {
@@ -519,7 +515,7 @@ export async function sendMessage(req: Request, res: Response) {
       conversationId,
       senderId: isAdmin ? 'admin' : user.userId,
       senderUsername: isAdmin ? 'admin' : user.username,
-      senderFullName: isAdmin ? 'Master Administrator' : (user.fullName || ''),
+      senderFullName: isAdmin ? 'Admin' : (user.fullName || ''),
       senderRole: user.role,
       recipientId,
       recipientUsername,
