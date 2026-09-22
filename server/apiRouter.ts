@@ -130,6 +130,7 @@ api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
 api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
 api.get('/admin/teachers/:teacherId/export', requireMasterAdmin, adminCtrl.exportTeacherData);
 api.patch('/admin/teachers/:teacherId/status', requireMasterAdmin, adminCtrl.updateTeacherStatus);
+api.patch('/admin/teachers/:teacherId/read-only', requireMasterAdmin, adminCtrl.updateTeacherReadOnly);
 api.patch('/admin/teachers/:teacherId/profile', requireMasterAdmin, adminCtrl.updateTeacherProfileByAdmin);
 api.patch('/admin/teachers/:teacherId/expiry', requireMasterAdmin, adminCtrl.updateTeacherExpiry);
 api.patch('/admin/teachers/:teacherId/lock-deletion', requireMasterAdmin, adminCtrl.updateTeacherDeletionLock);

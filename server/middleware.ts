@@ -167,37 +167,19 @@ export async function requireTeacher(req: Request, res: Response, next: NextFunc
         });
       }
 
-      const missingName = !req.user.fullName || !req.user.fullName.trim();
-      const missingCollege = !req.user.college || !req.user.college.trim();
-      if (missingName || missingCollege) {
-        return res.status(403).json({
-          success: false,
-          error: 'PROFILE_INCOMPLETE',
-          message: 'You are in Read-Only Mode because compulsory profile fields are incomplete. Please complete your Teacher Profile to unlock editing access.',
-        });
-      }
-
-      // Check required institutional profile questions
+      // Check if admin turned on read-only mode for this teacher
       try {
         const db = getDatabase();
-        const requiredQuestions = await db.collection('profile_questions').find({ required: true }).toArray();
-        if (requiredQuestions.length > 0) {
-          const userDoc = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
-          const hasMissingRequiredQ = requiredQuestions.some((q) => {
-            const val = userDoc?.customFields?.[q._id.toString()];
-            return !val || typeof val !== 'string' || !val.trim();
+        const userDoc = await db.collection('users').findOne({ _id: new ObjectId(req.user.userId) });
+        if (userDoc?.isReadOnly) {
+          return res.status(403).json({
+            success: false,
+            error: 'READ_ONLY_MODE',
+            message: 'Your account is in Read-Only Mode set by the Administrator. Please contact the administrator to enable editing.',
           });
-
-          if (hasMissingRequiredQ) {
-            return res.status(403).json({
-              success: false,
-              error: 'PROFILE_INCOMPLETE',
-              message: 'You are in Read-Only Mode because compulsory institutional questions are incomplete. Please complete your Teacher Profile to unlock editing access.',
-            });
-          }
         }
       } catch (err) {
-        console.error('Error checking required questions in requireTeacher:', err);
+        console.error('Error checking read-only mode in requireTeacher:', err);
       }
     }
   }

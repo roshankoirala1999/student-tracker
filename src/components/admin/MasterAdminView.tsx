@@ -50,6 +50,7 @@ interface TeacherItem {
   plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
+  isReadOnly?: boolean;
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
   expiryMode?: boolean;
@@ -132,6 +133,7 @@ export const MasterAdminView: React.FC = () => {
   const [editDob, setEditDob] = useState('');
   const [editCustomFields, setEditCustomFields] = useState<Record<string, string>>({});
   const [editPasswordInput, setEditPasswordInput] = useState('');
+  const [editReadOnly, setEditReadOnly] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
   // Profile Questions state
@@ -296,6 +298,20 @@ export const MasterAdminView: React.FC = () => {
     }
   };
 
+  const handleToggleReadOnly = async (teacher: TeacherItem) => {
+    const nextVal = !teacher.isReadOnly;
+    const res = await apiRequest(`/api/admin/teachers/${teacher.id}/read-only`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isReadOnly: nextVal }),
+    });
+    if (res.success) {
+      setSuccessMsg(`Teacher "${teacher.username}" access mode set to ${nextVal ? 'READ-ONLY' : 'FULL ACCESS'}.`);
+      await loadTeachers();
+    } else {
+      setError(res.message || 'Failed to update read-only mode.');
+    }
+  };
+
   const handleEditPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!passwordModalTeacher) return;
@@ -324,6 +340,7 @@ export const MasterAdminView: React.FC = () => {
     setEditDob(teacher.dob || '');
     setEditCustomFields(teacher.customFields || {});
     setEditPasswordInput('');
+    setEditReadOnly(!!teacher.isReadOnly);
   };
 
   const handleSaveTeacherProfile = async (e: React.FormEvent) => {
@@ -342,6 +359,7 @@ export const MasterAdminView: React.FC = () => {
       college: editCollege.trim(),
       dob: editDob.trim(),
       customFields: editCustomFields,
+      isReadOnly: editReadOnly,
     };
     if (editPasswordInput.trim()) {
       body.newPassword = editPasswordInput.trim();
@@ -576,6 +594,7 @@ export const MasterAdminView: React.FC = () => {
                 <th className="py-3 px-4 text-center">Classes</th>
                 <th className="py-3 px-4 text-center">Students</th>
                 <th className="py-3 px-4 text-center">Status</th>
+                <th className="py-3 px-4 text-center">Read-Only</th>
                 <th className="py-3 px-4 text-center">Deletion Lock</th>
                 <th className="py-3 px-4 text-right">Actions</th>
               </tr>
@@ -583,13 +602,13 @@ export const MasterAdminView: React.FC = () => {
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     Loading teachers directory...
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={9} className="py-12 text-center text-slate-400">
                     No teachers found matching your search.
                   </td>
                 </tr>
@@ -658,6 +677,30 @@ export const MasterAdminView: React.FC = () => {
                         >
                           {t.status.toUpperCase()}
                         </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleReadOnly(t)}
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-bold border transition-colors cursor-pointer inline-flex items-center gap-1 ${
+                            t.isReadOnly
+                              ? 'bg-rose-50 dark:bg-rose-950/60 border-rose-200 dark:border-rose-900 text-rose-700 dark:text-rose-300 hover:bg-rose-100'
+                              : 'bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                          }`}
+                          title={t.isReadOnly ? 'Read-Only Mode Active (Click to switch to Full Access)' : 'Full Access Mode (Click to switch to Read-Only)'}
+                        >
+                          {t.isReadOnly ? (
+                            <>
+                              <Eye className="w-3 h-3" />
+                              <span>Read-Only</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="w-3 h-3 text-emerald-500" />
+                              <span>Full Access</span>
+                            </>
+                          )}
+                        </button>
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <button
@@ -1278,6 +1321,26 @@ export const MasterAdminView: React.FC = () => {
                   ))}
                 </div>
               )}
+
+              {/* Read-Only Access Mode Control */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
+                <label className="flex items-start gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-800 cursor-pointer hover:bg-slate-100/60 dark:hover:bg-slate-800/50 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={editReadOnly}
+                    onChange={(e) => setEditReadOnly(e.target.checked)}
+                    className="w-4 h-4 mt-0.5 text-[#2B547E] rounded cursor-pointer shrink-0"
+                  />
+                  <div>
+                    <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                      Enforce Read-Only Mode
+                    </span>
+                    <span className="text-[11px] text-slate-500 dark:text-slate-400 block mt-0.5">
+                      When enabled, this teacher can view students and records but cannot create, modify, or delete data.
+                    </span>
+                  </div>
+                </label>
+              </div>
 
               {/* Optional Password Override */}
               <div className="pt-2 border-t border-slate-100 dark:border-slate-800">

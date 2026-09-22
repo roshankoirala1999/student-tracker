@@ -30,7 +30,7 @@ export interface UserProfile {
   createdAt: string;
   fullNameLocked?: boolean;
   isReadOnly?: boolean;
-  readOnlyReason?: 'expired' | 'incomplete_profile' | null;
+  readOnlyReason?: 'expired' | 'admin_locked' | null;
   missingFields?: string[];
 }
 
@@ -45,6 +45,7 @@ export interface TeacherItem {
   plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
+  isReadOnly?: boolean;
   isDeletionLocked?: boolean;
   mustChangePassword?: boolean;
   fullNameLocked?: boolean;

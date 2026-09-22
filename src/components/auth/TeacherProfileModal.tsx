@@ -111,10 +111,10 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
         if (res.data.readOnlyReason === 'expired') {
           setProfileMsg({ type: 'error', text: 'Profile saved, but you remain in Read-Only Mode due to account expiry. Contact administrator.' });
         } else {
-          setProfileMsg({ type: 'error', text: `Profile saved, but still in Read-Only Mode. Missing compulsory fields: ${res.data.missingFields?.join(', ')}` });
+          setProfileMsg({ type: 'error', text: 'Profile saved, but your account is in Read-Only Mode set by administrator.' });
         }
       } else {
-        setProfileMsg({ type: 'success', text: 'Teacher profile details saved successfully! Full Mode is active.' });
+        setProfileMsg({ type: 'success', text: 'Teacher profile details saved successfully!' });
       }
     } else {
       setProfileMsg({ type: 'error', text: res.message || 'Failed to update profile.' });
@@ -253,27 +253,25 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </div>
 
                 <div className="bg-white dark:bg-[#1A2232] p-3 rounded-lg border border-slate-200 dark:border-slate-700/80">
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Profile Completeness</span>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 block mb-0.5">Access Control</span>
                   <span className={`text-xs font-bold ${
-                    user.missingFields && user.missingFields.length > 0
-                      ? 'text-amber-600 dark:text-amber-400'
+                    isReadOnly
+                      ? 'text-rose-600 dark:text-rose-400'
                       : 'text-emerald-600 dark:text-emerald-400'
                   }`}>
-                    {user.missingFields && user.missingFields.length > 0
-                      ? `${user.missingFields.length} Compulsory Field(s) Incomplete`
-                      : 'Compulsory Fields Complete'}
+                    {isReadOnly ? 'Read-Only Mode' : 'Full Access'}
                   </span>
                 </div>
               </div>
 
-              {/* In-Profile Warning Banners (Photo 4) */}
+              {/* In-Profile Warning Banners */}
               {isExpired ? (
                 <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
                   <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                   <div>
                     <div className="font-bold">Account Expired — Read-Only Mode Active</div>
                     <div className="text-[11px] mt-0.5 text-rose-700 dark:text-rose-300/90">
-                      Your teacher account has expired. You are allowed to view existing classes, sections, students, and marks, but creating or modifying records is disabled. Kindly contact your master administrator to renew access.
+                      Your teacher account has expired. You are allowed to view existing classes, sections, students, and marks, but creating or modifying records is disabled. Kindly contact your administrator to renew access.
                     </div>
                   </div>
                 </div>
@@ -289,33 +287,33 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                 </div>
               ) : null}
 
-              {user.missingFields && user.missingFields.length > 0 && !isExpired && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              {isReadOnly && !isExpired && (
+                <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
+                  <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                   <div>
-                    <div className="font-bold">Compulsory Profile Incomplete — Read-Only Mode Active</div>
-                    <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
-                      You are in Read-Only Mode because compulsory profile fields are incomplete: <strong>{user.missingFields.join(', ')}</strong>. Kindly fill and save all compulsory fields below to unlock Full Mode.
+                    <div className="font-bold">Read-Only Mode Active (Set by Administrator)</div>
+                    <div className="text-[11px] mt-0.5 text-rose-700 dark:text-rose-300/90">
+                      Your teacher account is in Read-Only Mode set by the administrator. Creating or modifying records is disabled. Contact your administrator to restore full editing access.
                     </div>
                   </div>
                 </div>
               )}
             </div>
           ) : (
-            user.missingFields && user.missingFields.length > 0 ? (
-              <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 rounded-xl text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            isReadOnly ? (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 rounded-xl text-xs text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
+                <ShieldAlert className="w-4 h-4 text-rose-600 dark:text-rose-400 shrink-0 mt-0.5" />
                 <div>
-                  <div className="font-bold">Compulsory Profile Incomplete — Read-Only Mode Active</div>
-                  <div className="text-[11px] mt-0.5 text-amber-700 dark:text-amber-300/90">
-                    You are in Read-Only Mode because compulsory profile fields are incomplete: <strong>{user.missingFields.join(', ')}</strong>. Kindly fill and save all compulsory fields below to unlock Full Mode.
+                  <div className="font-bold">Read-Only Mode Active (Set by Administrator)</div>
+                  <div className="text-[11px] mt-0.5 text-rose-700 dark:text-rose-300/90">
+                    Your teacher account is in Read-Only Mode set by the administrator. Creating or modifying records is disabled. Contact your administrator to restore full editing access.
                   </div>
                 </div>
               </div>
             ) : null
           )}
 
-          {/* Institutional Identity & Contact Info (Photo 3) */}
+          {/* Institutional Identity */}
           <div className="bg-slate-50 dark:bg-[#0F172A] border border-slate-200 dark:border-slate-800 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-200 dark:border-slate-800">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-400">Institutional Identity</span>
@@ -325,51 +323,34 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {/* Full Name: Locked (Managed by administrator) */}
+              {/* Full Name */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-1">
-                  <span>Full Name</span>
-                  <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Locked</span>
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Full Name
                 </label>
-                <div className="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <span>{user.fullName || '—'}</span>
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <div className="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                  {user.fullName || '—'}
                 </div>
-                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1 block">
-                  It cannot be edited here, please contact administrator.
-                </span>
               </div>
 
-              {/* Phone Number: Locked (Managed by administrator) */}
+              {/* Ph No */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-1">
-                  <span>Phone Number</span>
-                  <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Locked</span>
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Ph No
                 </label>
-                <div className="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <span className={user.phoneNumber ? 'font-mono' : 'text-slate-400 italic'}>
-                    {user.phoneNumber || 'Not configured'}
-                  </span>
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <div className="px-3 py-2 text-xs font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                  {user.phoneNumber || '—'}
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Managed by administrator.
-                </span>
               </div>
 
-              {/* Username: Locked (Managed by administrator) */}
+              {/* Username */}
               <div>
-                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 flex items-center justify-between mb-1">
-                  <span>Username</span>
-                  <span className="text-[10px] text-slate-400 flex items-center gap-0.5"><Lock className="w-3 h-3" /> Locked</span>
+                <label className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 block mb-1">
+                  Username
                 </label>
-                <div className="px-3 py-2 text-xs font-mono font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 flex items-center justify-between">
-                  <span>@{user.username}</span>
-                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                <div className="px-3 py-2 text-xs font-mono font-medium rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700">
+                  @{user.username}
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Managed by administrator.
-                </span>
               </div>
             </div>
           </div>
@@ -383,7 +364,7 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
               </h3>
               {questions.some((q) => q.required) && (
                 <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                  <span className="text-rose-500 font-bold">*</span> = Compulsory for Full Mode
+                  <span className="text-rose-500 font-bold">*</span> = Required field
                 </span>
               )}
             </div>

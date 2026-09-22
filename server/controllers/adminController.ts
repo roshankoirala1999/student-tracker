@@ -50,6 +50,7 @@ export async function listAllTeachers(req: Request, res: Response) {
         plainPassword: t.plainPassword || '',
         role: t.role,
         status: t.status || 'active',
+        isReadOnly: !!t.isReadOnly,
         isDeletionLocked: !!t.isDeletionLocked,
         mustChangePassword: !!t.mustChangePassword,
         fullNameLocked: !!t.fullNameLocked,
@@ -195,6 +196,35 @@ export async function updateTeacherStatus(req: Request, res: Response) {
   }
 }
 
+export async function updateTeacherReadOnly(req: Request, res: Response) {
+  const { teacherId } = req.params;
+  const { isReadOnly } = req.body;
+
+  if (!teacherId || !ObjectId.isValid(teacherId)) {
+    return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
+  }
+
+  try {
+    const db = getDatabase();
+    const result = await db.collection('users').updateOne(
+      { _id: new ObjectId(teacherId), role: 'teacher' },
+      { $set: { isReadOnly: !!isReadOnly } }
+    );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Teacher not found.' });
+    }
+
+    return res.json({
+      success: true,
+      message: `Teacher account is now ${isReadOnly ? 'in Read-Only Mode' : 'in Full Access Mode'}.`,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
+
 export async function resetTeacherPassword(req: Request, res: Response) {
   const { teacherId } = req.params;
   const { newPassword } = req.body;
@@ -276,7 +306,7 @@ export const editTeacherPassword = resetTeacherPassword;
 
 export async function updateTeacherProfileByAdmin(req: Request, res: Response) {
   const { teacherId } = req.params;
-  const { fullName, phoneNumber, username, college, dob, customFields, newPassword } = req.body;
+  const { fullName, phoneNumber, username, college, dob, customFields, newPassword, isReadOnly } = req.body;
 
   if (!teacherId || !ObjectId.isValid(teacherId)) {
     return res.status(400).json({ success: false, message: 'Invalid Teacher ID.' });
@@ -353,6 +383,10 @@ export async function updateTeacherProfileByAdmin(req: Request, res: Response) {
       updateFields.plainPassword = cleanPass;
       updateFields.mustChangePassword = false;
       updateFields.tokenVersion = (teacher.tokenVersion || 0) + 1;
+    }
+
+    if (isReadOnly !== undefined) {
+      updateFields.isReadOnly = !!isReadOnly;
     }
 
     await db.collection('users').updateOne(

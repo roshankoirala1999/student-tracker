@@ -410,8 +410,9 @@ export async function getMe(req: Request, res: Response) {
       isProfileIncomplete = missingFields.length > 0;
     }
 
-    const isReadOnly = isTeacher ? (isExpired || isProfileIncomplete) : false;
-    const readOnlyReason = isTeacher ? (isExpired ? 'expired' : isProfileIncomplete ? 'incomplete_profile' : null) : null;
+    const isAdminReadOnly = isTeacher && !!user?.isReadOnly;
+    const isReadOnly = isTeacher ? (isExpired || isAdminReadOnly) : false;
+    const readOnlyReason = isTeacher ? (isExpired ? 'expired' : isAdminReadOnly ? 'admin_locked' : null) : null;
 
     return res.status(200).json({
       success: true,
@@ -552,8 +553,9 @@ export async function updateTeacherProfile(req: Request, res: Response) {
     }
 
     const isProfileIncomplete = missingFields.length > 0;
-    const isReadOnly = isExpired || isProfileIncomplete;
-    const readOnlyReason = isExpired ? 'expired' : isProfileIncomplete ? 'incomplete_profile' : null;
+    const isAdminReadOnly = !!updatedUser?.isReadOnly;
+    const isReadOnly = isExpired || isAdminReadOnly;
+    const readOnlyReason = isExpired ? 'expired' : isAdminReadOnly ? 'admin_locked' : null;
 
     return res.json({
       success: true,
