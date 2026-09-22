@@ -104,6 +104,7 @@ export interface StudentItem {
   teacherId: string;
   classId: string;
   sectionId: string;
+  sectionName?: string;
   rollNumber: number;
   studentName: string;
   symbolNumber: string;

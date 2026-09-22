@@ -95,8 +95,9 @@ api.patch('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClass
 api.delete('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.deleteAssessment);
 
 // 6. Students
+api.get('/classes/:classId/students', verifyClassOwnership, studentCtrl.listClassStudents);
 api.get('/sections/:sectionId/students', verifySectionOwnership, studentCtrl.listStudents);
-api.post('/sections/:sectionId/students', requireTeacher, verifySectionOwnership, studentCtrl.createStudent); // Enforces 100 limit
+api.post('/sections/:sectionId/students', requireTeacher, verifySectionOwnership, studentCtrl.createStudent);
 api.put('/students/:studentId', requireTeacher, studentCtrl.updateStudent);
 api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent); // Sensitive: requires password
 api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
@@ -116,6 +117,8 @@ api.get('/sections/:sectionId/excel/sample', verifySectionOwnership, marksCtrl.e
 api.post('/sections/:sectionId/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksExcel);
 
 // 8. Attendance
+api.get('/classes/:classId/attendance/download-csv', verifyClassOwnership, attendCtrl.downloadAttendanceCsv);
+api.get('/sections/:sectionId/attendance/download-csv', verifySectionOwnership, attendCtrl.downloadSectionAttendanceCsv);
 api.get('/sections/:sectionId/attendance', verifySectionOwnership, attendCtrl.getAttendanceMetaAndHistory);
 api.post('/sections/:sectionId/attendance', requireTeacher, verifySectionOwnership, attendCtrl.submitDailyAttendance);
 api.get('/attendance/:attendanceId', attendCtrl.getHistoricalDay);

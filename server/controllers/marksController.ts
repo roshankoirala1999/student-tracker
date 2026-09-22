@@ -332,10 +332,18 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       if (!existingByRoll.has(p.rollNumber)) newCount++;
     });
 
-    if (existingStudents.length + newCount > 100) {
+    if (existingStudents.length + newCount > 1000) {
       return res.status(400).json({
         success: false,
-        message: `Importing these students would exceed the section cap of 100 students (Current: ${existingStudents.length}, New: ${newCount}).`,
+        message: 'Max number of students limit reached (1000 per section)',
+      });
+    }
+
+    const classTotal = await db.collection('students').countDocuments({ classId: section.classId });
+    if (classTotal + newCount > 2000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Max number of students limit reached (2000 per class)',
       });
     }
 

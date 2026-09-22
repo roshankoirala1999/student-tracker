@@ -11,6 +11,7 @@ import {
   X,
   ChevronDown,
   AlertTriangle,
+  Download,
 } from 'lucide-react';
 import { ClassItem, SectionItem, ExaminationItem, AssignmentItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
@@ -111,13 +112,45 @@ export const ClassDetailView: React.FC<Props> = ({
     }
   };
 
+  // Download Attendance CSV for the entire class
+  const handleDownloadAttendance = async () => {
+    try {
+      const res = await fetch(`/api/classes/${currentClass.id}/attendance/download-csv`, {
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        alert(json?.message || 'Failed to download attendance CSV.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${currentClass.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Attendance.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch {
+      alert('Failed to download attendance CSV.');
+    }
+  };
+
   // Add Section (requires teacher's password)
   const handleConfirmAddSection = async (password: string) => {
+    if (sections.length >= 20) {
+      alert('Max number of sections limit reached (20 per class)');
+      throw new Error('Max number of sections limit reached (20 per class)');
+    }
     const res = await apiRequest(`/api/classes/${currentClass.id}/sections`, {
       method: 'POST',
       body: JSON.stringify({ name: newSectionName, password }),
     });
     if (!res.success) {
+      if (res.message && res.message.toLowerCase().includes('limit')) {
+        alert(res.message);
+      }
       throw new Error(res.message || 'Failed to add section.');
     }
     setNewSectionName('');
@@ -206,8 +239,8 @@ export const ClassDetailView: React.FC<Props> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Class Banner & Actions */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-5 sm:p-6 shadow-xs transition-colors space-y-5">
+      {/* Top Class Banner & Actions with solid class border */}
+      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border-2 border-[#2B547E] dark:border-blue-500/80 p-5 sm:p-6 shadow-sm transition-colors space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             {onBack && (
@@ -232,6 +265,17 @@ export const ClassDetailView: React.FC<Props> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Download Attendance CSV */}
+            <button
+              type="button"
+              onClick={handleDownloadAttendance}
+              className="flex items-center gap-2 px-3.5 py-2 min-h-[40px] rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-xs font-semibold transition-colors cursor-pointer"
+              title="Download Class Attendance CSV"
+            >
+              <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>Attendance Download</span>
+            </button>
+
             {/* Unified + Add Dropdown */}
             <div className="relative" ref={addDropdownRef}>
               <button
@@ -325,27 +369,19 @@ export const ClassDetailView: React.FC<Props> = ({
           </div>
         )}
 
-        {/* Single-Line Percentile Grid */}
+        {/* Single-Line Stats Grid without limit displays */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-2 border-t border-slate-100 dark:border-slate-800">
           <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
-            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 flex items-center justify-between">
-              <span>Enrollment</span>
-              <span className="text-slate-700 dark:text-slate-300 font-mono font-bold">{enrolledPercentile}%</span>
+            <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Total Students</div>
+            <div className="text-xl font-bold text-slate-900 dark:text-slate-100 mt-0.5">
+              {totalStudents}
             </div>
-            <div className="text-lg font-bold text-slate-900 dark:text-slate-100 mt-0.5">
-              {totalStudents} <span className="text-xs font-normal text-slate-500">/ {totalCapacity}</span>
-            </div>
-            <div className="w-full bg-slate-200 dark:bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
-              <div
-                className="bg-[#2B547E] dark:bg-blue-400 h-full rounded-full transition-all duration-300"
-                style={{ width: `${Math.min(enrolledPercentile, 100)}%` }}
-              />
-            </div>
+            <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Enrolled Across Sections</div>
           </div>
 
           <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
             <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Sections</div>
-            <div className="text-lg font-bold text-[#2B547E] dark:text-blue-400 mt-0.5">
+            <div className="text-xl font-bold text-[#2B547E] dark:text-blue-400 mt-0.5">
               {sections.length}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Configured Groups</div>
@@ -353,7 +389,7 @@ export const ClassDetailView: React.FC<Props> = ({
 
           <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
             <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Examinations</div>
-            <div className="text-lg font-bold text-amber-700 dark:text-amber-400 mt-0.5">
+            <div className="text-xl font-bold text-amber-700 dark:text-amber-400 mt-0.5">
               {examinations.length}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Summative Tests</div>
@@ -361,7 +397,7 @@ export const ClassDetailView: React.FC<Props> = ({
 
           <div className="bg-[#F4F6FA] dark:bg-[#0F172A] p-3 rounded-xl border border-slate-200/80 dark:border-slate-800">
             <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Assignments</div>
-            <div className="text-lg font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
+            <div className="text-xl font-bold text-emerald-700 dark:text-emerald-400 mt-0.5">
               {assignments.length}
             </div>
             <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">Continuous Tasks</div>
@@ -394,65 +430,91 @@ export const ClassDetailView: React.FC<Props> = ({
               No sections created yet for {currentClass.name}. Click &ldquo;New Section&rdquo; to begin roster entry.
             </div>
           ) : (
-            sections.map((sec) => {
-              const count = sec.studentCount || 0;
-              const percent = Math.min(Math.round((count / 100) * 100), 100);
+            <>
+              {sections.map((sec) => {
+                const count = sec.studentCount || 0;
 
-              return (
-                <div
-                  key={sec.id}
-                  className="border border-slate-200/80 dark:border-slate-700/80 rounded-2xl p-5 hover:border-[#2B547E] dark:hover:border-blue-400 hover:shadow-xs transition-all flex flex-col justify-between bg-white dark:bg-[#0F172A]"
-                >
-                  <div>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <span className="text-[10px] font-bold text-[#2B547E] dark:text-blue-400 uppercase tracking-wider">
-                          Section
-                        </span>
-                        <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base mt-0.5">{sec.name}</h4>
+                return (
+                  <div
+                    key={sec.id}
+                    className="border-2 border-emerald-500/80 dark:border-emerald-500/60 rounded-2xl p-5 hover:border-emerald-500 hover:shadow-md transition-all flex flex-col justify-between bg-emerald-50/20 dark:bg-[#0D241E]"
+                  >
+                    <div>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider">
+                            Section
+                          </span>
+                          <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base mt-0.5">{sec.name}</h4>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isExpired}
+                          title={isExpired ? 'Account expired (read-only)' : 'Delete Section (Requires Password)'}
+                          onClick={() => setSectionToDelete(sec)}
+                          className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed p-1.5 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
+
+                      {/* Students Count */}
+                      <div className="mt-4 p-3 bg-white/70 dark:bg-[#081713] rounded-xl border border-emerald-500/20">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Students Enrolled</div>
+                        <div className="text-xl font-extrabold text-slate-900 dark:text-slate-100 mt-0.5">
+                          {count}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 pt-3 border-t border-emerald-500/20 flex items-center justify-end">
                       <button
                         type="button"
-                        disabled={isExpired}
-                        title={isExpired ? 'Account expired (read-only)' : 'Delete Section (Requires Password)'}
-                        onClick={() => setSectionToDelete(sec)}
-                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed p-1.5 rounded-lg transition-colors cursor-pointer"
+                        onClick={() => onSelectSection(sec.id)}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <span>Open Section</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  </div>
+                );
+              })}
 
-                    {/* Progress Bar & Enrolled Stats */}
-                    <div className="mt-4 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-500 dark:text-slate-400 font-medium">Students Enrolled</span>
-                        <span className="font-bold text-slate-900 dark:text-slate-100">
-                          {count} <span className="text-[11px] font-normal text-slate-400">/ 100</span>
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div
-                          className="bg-[#2B547E] dark:bg-blue-400 h-full rounded-full transition-all duration-300"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
+              {/* Combined Section Card (All Students Sorted by Section) */}
+              <div
+                className="border-2 border-indigo-500/80 dark:border-indigo-500/60 rounded-2xl p-5 hover:border-indigo-500 hover:shadow-md transition-all flex flex-col justify-between bg-indigo-50/20 dark:bg-[#141B38]"
+              >
+                <div>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <span className="text-[10px] font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">
+                        Default Combined Section
+                      </span>
+                      <h4 className="font-bold text-slate-900 dark:text-slate-100 text-base mt-0.5">Combined</h4>
                     </div>
                   </div>
 
-                  <div className="mt-5 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between">
-                    <span className="text-[11px] text-slate-400 font-medium">{100 - count} spots remaining</span>
-                    <button
-                      type="button"
-                      onClick={() => onSelectSection(sec.id)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#2B547E]/10 dark:bg-blue-500/10 hover:bg-[#2B547E] dark:hover:bg-blue-600 text-[#2B547E] dark:text-blue-400 hover:text-white dark:hover:text-white rounded-lg text-xs font-semibold transition-all cursor-pointer"
-                    >
-                      <span>Open Section</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
+                  <div className="mt-4 p-3 bg-white/70 dark:bg-[#0C1226] rounded-xl border border-indigo-500/20">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 font-medium">Total Students Across Sections</div>
+                    <div className="text-xl font-extrabold text-indigo-700 dark:text-indigo-300 mt-0.5">
+                      {totalStudents}
+                    </div>
                   </div>
                 </div>
-              );
-            })
+
+                <div className="mt-5 pt-3 border-t border-indigo-500/20 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => onSelectSection('combined')}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-semibold transition-all cursor-pointer shadow-2xs"
+                  >
+                    <span>Open Combined</span>
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>

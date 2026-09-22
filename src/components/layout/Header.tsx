@@ -9,9 +9,10 @@ interface Props {
   viewMode: 'app' | 'admin';
   setViewMode: (mode: 'app' | 'admin') => void;
   onOpenMobileSidebar?: () => void;
+  onGoHome?: () => void;
 }
 
-export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSidebar }) => {
+export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSidebar, onGoHome }) => {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const [profileModalOpen, setProfileModalOpen] = useState(false);
@@ -55,13 +56,21 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
                 <Menu className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
               </button>
             )}
-            <div className="w-10 h-10 bg-[#2B547E] rounded-2xl flex items-center justify-center text-white shadow-xs shrink-0">
-              <GraduationCap className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight">Student Tracker</h1>
-              <p className="text-[11px] text-[#355C7D] dark:text-blue-400 font-medium">Academic &amp; Marks Management</p>
-            </div>
+            <button
+              type="button"
+              onClick={onGoHome}
+              className="flex items-center gap-3 group cursor-pointer text-left focus:outline-hidden"
+              title="Go to Home"
+            >
+              <div className="w-10 h-10 bg-[#2B547E] group-hover:bg-[#355C7D] rounded-2xl flex items-center justify-center text-white shadow-xs shrink-0 transition-transform active:scale-95">
+                <GraduationCap className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight group-hover:text-[#2B547E] dark:group-hover:text-blue-400 transition-colors">
+                  Student management
+                </h1>
+              </div>
+            </button>
           </div>
 
           {/* User profile, Theme Toggle, Fullscreen & actions */}

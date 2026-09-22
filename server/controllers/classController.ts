@@ -326,6 +326,14 @@ export async function addSection(req: Request, res: Response) {
     }
 
     const totalInClass = await db.collection('sections').countDocuments({ classId });
+    if (totalInClass >= 20) {
+      return res.status(400).json({
+        success: false,
+        error: 'SECTION_LIMIT_REACHED',
+        message: 'Max number of sections limit reached (20 per class)',
+      });
+    }
+
     const sectionTeacherId = classDoc.teacherId.toString();
 
     const insertResult = await db.collection('sections').insertOne({

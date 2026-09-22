@@ -121,6 +121,9 @@ export const StudentCsvUploadModal: React.FC<Props> = ({
       setSuccessResult(res.message || 'Student information imported successfully.');
       await onSuccess();
     } else {
+      if (res.message && res.message.toLowerCase().includes('limit')) {
+        alert(res.message);
+      }
       setError(res.message || 'Failed to upload student information.');
       if (res.errors && Array.isArray(res.errors)) {
         setDetailedErrors(res.errors);

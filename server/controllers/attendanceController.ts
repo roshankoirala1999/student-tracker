@@ -310,3 +310,152 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 }
+
+function escapeCsv(val: any): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export async function downloadAttendanceCsv(req: Request, res: Response) {
+  const { classId } = req.params;
+  const sectionIdQuery = req.query.sectionId as string | undefined;
+
+  try {
+    const db = getDatabase();
+    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
+    if (!classDoc) return res.status(404).json({ success: false, message: 'Class not found.' });
+
+    // Find sections
+    const sections = await db.collection('sections')
+      .find({ classId })
+      .sort({ order: 1, name: 1 })
+      .toArray();
+
+    const sectionMap = new Map<string, string>();
+    const sectionOrderMap = new Map<string, number>();
+    sections.forEach((s, idx) => {
+      sectionMap.set(s._id.toString(), s.name);
+      sectionOrderMap.set(s._id.toString(), s.order !== undefined ? s.order : idx);
+    });
+
+    const isSpecificSection = !!(sectionIdQuery && sectionIdQuery !== 'combined' && ObjectId.isValid(sectionIdQuery));
+    const studentQuery: any = { classId };
+    if (isSpecificSection) {
+      studentQuery.sectionId = sectionIdQuery;
+    }
+
+    const students = await db.collection('students').find(studentQuery).toArray();
+
+    // Sort according to section, then by rollNumber
+    students.sort((a, b) => {
+      const orderA = sectionOrderMap.get(a.sectionId) ?? 999;
+      const orderB = sectionOrderMap.get(b.sectionId) ?? 999;
+      if (orderA !== orderB) return orderA - orderB;
+
+      const nameA = sectionMap.get(a.sectionId) || '';
+      const nameB = sectionMap.get(b.sectionId) || '';
+      const nameComp = nameA.localeCompare(nameB);
+      if (nameComp !== 0) return nameComp;
+
+      return (a.rollNumber || 0) - (b.rollNumber || 0);
+    });
+
+    // Find attendance records
+    const sectionIds = sections.map((s) => s._id.toString());
+    const attendanceQuery: any = {
+      $or: [{ classId }, { sectionId: { $in: sectionIds } }],
+    };
+    if (isSpecificSection) {
+      attendanceQuery.$or = [{ sectionId: sectionIdQuery }];
+    }
+
+    const attendanceDocs = await db.collection('attendance').find(attendanceQuery).toArray();
+
+    // Find highest day number recorded (default at least 30 as shown in Image 2)
+    let maxRecordedDay = 0;
+    const statusMap = new Map<string, string>(); // `${studentId}_${dayNumber}` -> status
+
+    attendanceDocs.forEach((doc) => {
+      const dNum = doc.dayNumber || 0;
+      if (dNum > maxRecordedDay) maxRecordedDay = dNum;
+      if (Array.isArray(doc.records)) {
+        doc.records.forEach((r: any) => {
+          if (r.studentId) {
+            statusMap.set(`${r.studentId}_${dNum}`, r.status);
+          }
+        });
+      }
+    });
+
+    const totalDays = Math.max(30, maxRecordedDay);
+
+    // Build CSV strictly following Image 2 format
+    const rows: string[] = [];
+    // Row 1: Class Name = <ClassName>
+    rows.push(`Class Name = ${classDoc.name}`);
+
+    // Row 2: Headers
+    const dayHeaders = Array.from({ length: totalDays }, (_, i) => i + 1);
+    rows.push(['Roll no', 'Symbol No', 'NAME', 'Section', ...dayHeaders, 'Total'].join(','));
+
+    // Rows 3+: Students
+    students.forEach((s) => {
+      const sId = s._id.toString();
+      const secName = sectionMap.get(s.sectionId) || '';
+      let totalPresent = 0;
+      const dayValues: number[] = [];
+
+      for (let d = 1; d <= totalDays; d++) {
+        const status = statusMap.get(`${sId}_${d}`);
+        if (status === 'present') {
+          dayValues.push(1);
+          totalPresent++;
+        } else {
+          dayValues.push(0);
+        }
+      }
+
+      const row = [
+        s.rollNumber,
+        escapeCsv(s.symbolNumber || ''),
+        escapeCsv(s.studentName || ''),
+        escapeCsv(secName),
+        ...dayValues,
+        totalPresent,
+      ];
+      rows.push(row.join(','));
+    });
+
+    const csvContent = '\uFEFF' + rows.join('\r\n');
+    const safeName = (classDoc.name || 'Class').replace(/[^a-zA-Z0-9_\-]/g, '_');
+    const secSuffix = isSpecificSection ? `_${(sectionMap.get(sectionIdQuery!) || 'Section').replace(/[^a-zA-Z0-9_\-]/g, '_')}` : '_Combined';
+    const filename = `${safeName}${secSuffix}_Attendance.csv`;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(csvContent);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to download attendance CSV.' });
+  }
+}
+
+export async function downloadSectionAttendanceCsv(req: Request, res: Response) {
+  const { sectionId } = req.params;
+  try {
+    const db = getDatabase();
+    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    req.params.classId = section.classId;
+    req.query.sectionId = sectionId;
+    return downloadAttendanceCsv(req, res);
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to download attendance CSV.' });
+  }
+}

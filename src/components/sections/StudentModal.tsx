@@ -6,7 +6,6 @@ interface Props {
   isOpen: boolean;
   sectionName: string;
   student?: StudentItem | null;
-  isSectionFull?: boolean;
   onClose: () => void;
   onSave: (data: {
     rollNumber: number;
@@ -21,7 +20,6 @@ export const StudentModal: React.FC<Props> = ({
   isOpen,
   sectionName,
   student,
-  isSectionFull = false,
   onClose,
   onSave,
 }) => {
@@ -105,12 +103,6 @@ export const StudentModal: React.FC<Props> = ({
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-4 overflow-y-auto">
-          {!student && isSectionFull && (
-            <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl p-3 text-xs text-rose-700 dark:text-rose-300">
-              This section has reached the maximum capacity of 100 students. You cannot add additional students.
-            </div>
-          )}
-
           {error && (
             <div className="bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 rounded-xl p-3 text-xs text-rose-700 dark:text-rose-300">
               {error}
@@ -126,7 +118,7 @@ export const StudentModal: React.FC<Props> = ({
               type="number"
               min={1}
               required
-              disabled={loading || (!student && isSectionFull)}
+              disabled={loading}
               value={rollNumber}
               onChange={(e) => setRollNumber(e.target.value)}
               placeholder="e.g. 1"
@@ -142,7 +134,7 @@ export const StudentModal: React.FC<Props> = ({
             <input
               type="text"
               required
-              disabled={loading || (!student && isSectionFull)}
+              disabled={loading}
               value={studentName}
               onChange={(e) => setStudentName(e.target.value)}
               placeholder="e.g. Student Name"
@@ -158,7 +150,7 @@ export const StudentModal: React.FC<Props> = ({
             <input
               type="text"
               required
-              disabled={loading || (!student && isSectionFull)}
+              disabled={loading}
               value={symbolNumber}
               onChange={(e) => setSymbolNumber(e.target.value)}
               placeholder="e.g. 12345"
@@ -174,7 +166,7 @@ export const StudentModal: React.FC<Props> = ({
             <input
               type="text"
               required
-              disabled={loading || (!student && isSectionFull)}
+              disabled={loading}
               value={contactNumber}
               onChange={(e) => setContactNumber(e.target.value)}
               placeholder="e.g. 98XXXXXXXX"
@@ -192,7 +184,7 @@ export const StudentModal: React.FC<Props> = ({
             </button>
             <button
               type="submit"
-              disabled={loading || (!student && isSectionFull)}
+              disabled={loading}
               className="px-5 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 cursor-pointer transition-colors"
             >
               {loading ? 'Saving...' : student ? 'Update Student' : 'Save Student'}

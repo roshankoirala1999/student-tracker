@@ -255,18 +255,19 @@ export const Sidebar: React.FC<Props> = ({
               const isClassOnlySelected = isClassSelected && !selectedSectionId;
               const isExpanded = !!expandedClasses[cls.id];
               const sections = sectionsByClass[cls.id] || [];
+              const totalStudents = sections.reduce((sum, s) => sum + (s.studentCount || 0), 0);
               const isMenuOpen = activeClassMenuId === cls.id;
 
               return (
-                <div key={cls.id} className="space-y-0.5">
-                  {/* Class Row: Header & Accordion Chevron */}
+                <div key={cls.id} className="space-y-1">
+                  {/* Class Row: Header & Accordion Chevron with distinct solid border */}
                   <div
-                    className={`group relative flex items-center justify-between rounded-xl transition-all ${
+                    className={`group relative flex items-center justify-between rounded-xl transition-all border-2 ${
                       isClassOnlySelected
-                        ? 'bg-[#2B547E] text-white shadow-xs font-bold'
+                        ? 'border-[#4A88C5] bg-[#2B547E] text-white shadow-sm font-bold ring-1 ring-blue-400/40'
                         : isClassSelected
-                        ? 'bg-slate-800/90 text-white'
-                        : 'text-slate-300 hover:bg-slate-800/60 hover:text-white'
+                        ? 'border-[#2B547E] bg-[#1E2D44] text-white shadow-2xs'
+                        : 'border-[#2B547E]/40 bg-[#162235]/90 text-slate-200 hover:border-[#4A88C5]/70 hover:bg-[#1C2C45] hover:text-white'
                     }`}
                   >
                     {/* Accordion Chevron Toggle Icon */}
@@ -274,10 +275,10 @@ export const Sidebar: React.FC<Props> = ({
                       type="button"
                       onClick={(e) => toggleClassAccordion(cls.id, e)}
                       aria-label={isExpanded ? 'Collapse section list' : 'Expand section list'}
-                      className="p-2.5 min-w-[36px] flex items-center justify-center text-slate-400 hover:text-white cursor-pointer transition-colors"
+                      className="p-2.5 min-w-[36px] flex items-center justify-center text-slate-300 hover:text-white cursor-pointer transition-colors"
                     >
                       {isExpanded ? (
-                        <ChevronDown className="w-4 h-4 text-blue-400 shrink-0" />
+                        <ChevronDown className="w-4 h-4 text-blue-300 shrink-0" />
                       ) : (
                         <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                       )}
@@ -287,7 +288,7 @@ export const Sidebar: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={() => handleSelectClassHeader(cls.id)}
-                      className="flex-1 py-2.5 text-left text-xs font-semibold truncate cursor-pointer select-none"
+                      className="flex-1 py-2 text-left text-xs font-semibold truncate cursor-pointer select-none"
                     >
                       <span className="truncate">{cls.name}</span>
                     </button>
@@ -301,7 +302,7 @@ export const Sidebar: React.FC<Props> = ({
                           setActiveClassMenuId(isMenuOpen ? null : cls.id);
                         }}
                         aria-label="Class settings"
-                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/20 text-slate-400 hover:text-white cursor-pointer transition-opacity"
+                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/20 text-slate-300 hover:text-white cursor-pointer transition-opacity"
                       >
                         <MoreVertical className="w-3.5 h-3.5" />
                       </button>
@@ -346,43 +347,78 @@ export const Sidebar: React.FC<Props> = ({
 
                   {/* Section Sub-items (Rendered when Accordion is Expanded) */}
                   {isExpanded && (
-                    <div className="pl-6 pr-1 py-1 space-y-1">
+                    <div className="pl-4 pr-1 py-1 space-y-1.5">
                       {sections.length === 0 ? (
                         <div className="text-[11px] text-slate-400 py-1.5 pl-2 italic">
                           No sections yet
                         </div>
                       ) : (
-                        sections.map((sec) => {
-                          const isSecSelected =
-                            selectedClassId === cls.id && selectedSectionId === sec.id;
+                        <>
+                          {sections.map((sec) => {
+                            const isSecSelected =
+                              selectedClassId === cls.id && selectedSectionId === sec.id;
 
-                          return (
-                            <button
-                              key={sec.id}
-                              type="button"
-                              onClick={() => {
-                                onSelectSection(cls.id, sec.id);
-                                setMobileOpen(false);
-                              }}
-                              className={`w-full flex items-center justify-between px-3 py-2 min-h-[36px] rounded-lg text-xs transition-colors cursor-pointer ${
-                                isSecSelected
-                                  ? 'bg-[#355C7D] text-white font-semibold shadow-xs'
-                                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-                              }`}
-                            >
-                              <span className="truncate">{sec.name}</span>
-                              <span
-                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                            return (
+                              <button
+                                key={sec.id}
+                                type="button"
+                                onClick={() => {
+                                  onSelectSection(cls.id, sec.id);
+                                  setMobileOpen(false);
+                                }}
+                                className={`w-full flex items-center justify-between px-3 py-2 min-h-[36px] rounded-lg text-xs transition-all cursor-pointer border-2 ${
                                   isSecSelected
-                                    ? 'bg-white/20 text-white'
-                                    : 'bg-slate-800 text-slate-400'
+                                    ? 'border-emerald-400 bg-emerald-700 text-white font-semibold shadow-xs ring-1 ring-emerald-400/40'
+                                    : 'border-emerald-600/40 bg-[#0F2922]/80 text-emerald-200 hover:border-emerald-500/70 hover:bg-[#14382F] hover:text-white'
                                 }`}
                               >
-                                {sec.studentCount ?? 0}
-                              </span>
-                            </button>
-                          );
-                        })
+                                <span className="truncate">{sec.name}</span>
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                                    isSecSelected
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-emerald-950 text-emerald-300 border border-emerald-600/30'
+                                  }`}
+                                >
+                                  {sec.studentCount ?? 0}
+                                </span>
+                              </button>
+                            );
+                          })}
+
+                          {/* Default Combined Section (All students of every section sorted according to section) */}
+                          {(() => {
+                            const isCombinedSelected =
+                              selectedClassId === cls.id && selectedSectionId === 'combined';
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onSelectSection(cls.id, 'combined');
+                                  setMobileOpen(false);
+                                }}
+                                className={`w-full flex items-center justify-between px-3 py-2 min-h-[36px] rounded-lg text-xs transition-all cursor-pointer border-2 ${
+                                  isCombinedSelected
+                                    ? 'border-indigo-400 bg-indigo-700 text-white font-semibold shadow-xs ring-1 ring-indigo-400/40'
+                                    : 'border-indigo-500/40 bg-[#161B33]/80 text-indigo-200 hover:border-indigo-400/70 hover:bg-[#1E2547] hover:text-white'
+                                }`}
+                              >
+                                <span className="truncate font-medium flex items-center gap-1.5">
+                                  <span>Combined</span>
+                                </span>
+                                <span
+                                  className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${
+                                    isCombinedSelected
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-indigo-950 text-indigo-300 border border-indigo-500/40'
+                                  }`}
+                                >
+                                  {totalStudents}
+                                </span>
+                              </button>
+                            );
+                          })()}
+                        </>
                       )}
                     </div>
                   )}

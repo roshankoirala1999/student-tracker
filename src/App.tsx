@@ -11,6 +11,7 @@ import { SectionDetailView } from './components/sections/SectionDetailView.tsx';
 import { MasterAdminView } from './components/admin/MasterAdminView.tsx';
 import { CreateClassModal } from './components/classes/CreateClassModal.tsx';
 import { ForcedPasswordChange } from './components/auth/ForcedPasswordChange.tsx';
+import { HomeView } from './components/home/HomeView.tsx';
 import { ClassItem, SectionItem } from './types/index.ts';
 import { apiRequest } from './api/client.ts';
 
@@ -25,6 +26,7 @@ const MainApp: React.FC = () => {
   const [sectionsByClass, setSectionsByClass] = useState<Record<string, SectionItem[]>>({});
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [isHomeView, setIsHomeView] = useState<boolean>(false);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [classesLoading, setClassesLoading] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
@@ -37,9 +39,9 @@ const MainApp: React.FC = () => {
     setClassesLoading(false);
     if (res.success && res.data) {
       setClasses(res.data);
-      // If current selected class is not in the list, or none selected, pick the first
+      // If current selected class is not in the list, or none selected, pick the first unless user chose home view
       if (res.data.length > 0) {
-        if (!selectedClassId || !res.data.some((c) => c.id === selectedClassId)) {
+        if (!isHomeView && (!selectedClassId || !res.data.some((c) => c.id === selectedClassId))) {
           setSelectedClassId(res.data[0].id);
         }
       } else {
@@ -114,6 +116,11 @@ const MainApp: React.FC = () => {
         viewMode={viewMode}
         setViewMode={setViewMode}
         onOpenMobileSidebar={() => setMobileSidebarOpen(true)}
+        onGoHome={() => {
+          setIsHomeView(true);
+          setSelectedClassId(null);
+          setSelectedSectionId(null);
+        }}
       />
 
       {viewMode === 'admin' ? (
@@ -129,10 +136,12 @@ const MainApp: React.FC = () => {
             selectedClassId={selectedClassId}
             selectedSectionId={selectedSectionId}
             onSelectClass={(classId) => {
+              setIsHomeView(false);
               setSelectedClassId(classId);
               setSelectedSectionId(null);
             }}
             onSelectSection={(classId, sectionId) => {
+              setIsHomeView(false);
               setSelectedClassId(classId);
               setSelectedSectionId(sectionId);
             }}
@@ -170,7 +179,7 @@ const MainApp: React.FC = () => {
 
             {classesLoading ? (
               <div className="py-20 text-center text-xs text-slate-400">Loading classes...</div>
-            ) : currentSection && currentClass ? (
+            ) : !isHomeView && currentSection && currentClass ? (
               <SectionDetailView
                 currentClass={currentClass}
                 section={currentSection}
@@ -181,7 +190,7 @@ const MainApp: React.FC = () => {
                   }
                 }}
               />
-            ) : currentClass ? (
+            ) : !isHomeView && currentClass ? (
               <ClassDetailView
                 currentClass={currentClass}
                 sections={currentSections}
@@ -195,33 +204,26 @@ const MainApp: React.FC = () => {
                 onClassDeleted={async () => {
                   setSelectedSectionId(null);
                   setSelectedClassId(null);
+                  setIsHomeView(true);
                   await loadClasses();
                 }}
                 onBack={() => {
                   setSelectedSectionId(null);
                   setSelectedClassId(null);
+                  setIsHomeView(true);
                 }}
               />
             ) : (
-              <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-8 sm:p-12 text-center text-slate-500 dark:text-slate-400 shadow-xs max-w-md mx-auto my-12 transition-colors">
-                <div className="w-12 h-12 rounded-2xl bg-[#2B547E]/10 dark:bg-blue-500/10 flex items-center justify-center text-[#2B547E] dark:text-blue-400 mx-auto mb-3">
-                  <BookOpen className="w-6 h-6" />
-                </div>
-                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100 mb-1">No Class Selected</h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4">
-                  Select an academic class from the sidebar, or create a new class to manage sections, students, and marks.
-                </p>
-                <button
-                  type="button"
-                  disabled={isExpired}
-                  onClick={() => setCreateClassModalOpen(true)}
-                  className="inline-flex items-center gap-2 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold cursor-pointer transition-colors shadow-xs"
-                  title={isExpired ? 'Account expired (read-only)' : 'Create New Class'}
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Create New Class</span>
-                </button>
-              </div>
+              <HomeView
+                classes={classes}
+                onSelectClass={(classId) => {
+                  setIsHomeView(false);
+                  setSelectedClassId(classId);
+                  setSelectedSectionId(null);
+                }}
+                onOpenCreateClass={() => setCreateClassModalOpen(true)}
+                isExpired={isExpired}
+              />
             )}
           </main>
         </div>
@@ -232,6 +234,7 @@ const MainApp: React.FC = () => {
         isOpen={createClassModalOpen}
         onClose={() => setCreateClassModalOpen(false)}
         onCreated={async (newClass) => {
+          setIsHomeView(false);
           await loadClasses();
           setSelectedClassId(newClass.id);
           setSelectedSectionId(null);

@@ -591,9 +591,9 @@ export const AttendanceModal: React.FC<Props> = ({
                       {absentStudents.map((s) => (
                         <span
                           key={s.id}
-                          className="px-2 py-0.5 rounded-lg bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 text-[11px] font-medium"
+                          className="px-2.5 py-1 rounded-lg bg-rose-100 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200 text-xs font-semibold"
                         >
-                          Roll #{s.rollNumber || '-'}: {s.studentName}
+                          {s.studentName}
                         </span>
                       ))}
                     </div>

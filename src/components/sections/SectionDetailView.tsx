@@ -12,6 +12,7 @@ import {
   Users,
   AlertCircle,
   FileText,
+  Download,
 } from 'lucide-react';
 import { ClassItem, SectionItem, StudentItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
@@ -40,9 +41,9 @@ export const SectionDetailView: React.FC<Props> = ({
   const { user } = useAuth();
   const isExpired = !!user?.isExpired;
 
+  const isCombined = section.id === 'combined';
   const [students, setStudents] = useState<StudentItem[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
-  const [maxLimit, setMaxLimit] = useState<number>(100);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
 
@@ -61,20 +62,46 @@ export const SectionDetailView: React.FC<Props> = ({
   const loadStudents = async () => {
     setLoading(true);
     const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
-    const res = await apiRequest<StudentItem[]>(
-      `/api/sections/${section.id}/students${q}`
-    );
+    const url = isCombined
+      ? `/api/classes/${currentClass.id}/students${q}`
+      : `/api/sections/${section.id}/students${q}`;
+    const res = await apiRequest<StudentItem[]>(url);
     setLoading(false);
     if (res.success && res.data) {
       setStudents(res.data);
       setTotalCount(res.totalCount !== undefined ? res.totalCount : res.data.length);
-      if (res.maxLimit !== undefined) setMaxLimit(res.maxLimit);
     }
   };
 
   useEffect(() => {
     loadStudents();
-  }, [section.id, search]);
+  }, [section.id, search, currentClass.id]);
+
+  const handleDownloadAttendance = async () => {
+    try {
+      const url = isCombined
+        ? `/api/classes/${currentClass.id}/attendance/download-csv`
+        : `/api/sections/${section.id}/attendance/download-csv`;
+      const res = await fetch(url, { credentials: 'include' });
+      if (!res.ok) {
+        const json = await res.json().catch(() => null);
+        alert(json?.message || 'Failed to download attendance CSV.');
+        return;
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const secLabel = isCombined ? 'Combined' : section.name;
+      a.download = `${currentClass.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${secLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}_Attendance.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(blobUrl);
+    } catch {
+      alert('Failed to download attendance CSV.');
+    }
+  };
 
   const handleSaveStudent = async (data: {
     rollNumber: number;
@@ -85,6 +112,16 @@ export const SectionDetailView: React.FC<Props> = ({
   }) => {
     if (isExpired) return;
 
+    if (isCombined) {
+      alert('Please select a specific section to add students.');
+      return;
+    }
+
+    if (!selectedStudentForEdit && totalCount >= 1000) {
+      alert('Max number of student limit reached (1000 per section)');
+      throw new Error('Max number of student limit reached (1000 per section)');
+    }
+
     if (selectedStudentForEdit) {
       // Update student
       const res = await apiRequest(`/api/students/${selectedStudentForEdit.id}`, {
@@ -92,6 +129,9 @@ export const SectionDetailView: React.FC<Props> = ({
         body: JSON.stringify(data),
       });
       if (!res.success) {
+        if (res.message && res.message.toLowerCase().includes('limit')) {
+          alert(res.message);
+        }
         throw new Error(res.message || 'Failed to update student.');
       }
     } else {
@@ -101,6 +141,9 @@ export const SectionDetailView: React.FC<Props> = ({
         body: JSON.stringify(data),
       });
       if (!res.success) {
+        if (res.message && res.message.toLowerCase().includes('limit')) {
+          alert(res.message);
+        }
         throw new Error(res.message || 'Failed to add student.');
       }
     }
@@ -142,16 +185,21 @@ export const SectionDetailView: React.FC<Props> = ({
     }
 
     const csv = generateCsv(headers, rows);
-    const filename = `${currentClass.name.replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Student_Info_Template.csv`;
+    const secName = isCombined ? 'Combined' : section.name;
+    const filename = `${currentClass.name.replace(/\s+/g, '_')}_${secName.replace(/\s+/g, '_')}_Student_Info_Template.csv`;
     downloadCsvFile(filename, csv);
   };
 
-  const isFull = totalCount >= maxLimit;
-
   return (
     <div className="space-y-6">
-      {/* Top Breadcrumb and Header */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors">
+      {/* Top Breadcrumb and Header with solid section border */}
+      <div
+        className={`rounded-2xl border-2 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-colors ${
+          isCombined
+            ? 'bg-indigo-50/20 dark:bg-[#141B38] border-indigo-500/80 dark:border-indigo-500/70'
+            : 'bg-emerald-50/20 dark:bg-[#0D241E] border-emerald-500/80 dark:border-emerald-500/70'
+        }`}
+      >
         <div>
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">
             <button
@@ -163,78 +211,97 @@ export const SectionDetailView: React.FC<Props> = ({
               {currentClass.name}
             </button>
             <span>/</span>
-            <span className="text-[#2B547E] dark:text-blue-400 font-bold">{section.name}</span>
+            <span className={isCombined ? 'text-indigo-600 dark:text-indigo-400 font-bold' : 'text-emerald-700 dark:text-emerald-400 font-bold'}>
+              {isCombined ? 'Combined' : section.name}
+            </span>
           </div>
 
           <div className="flex items-center gap-3">
-            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{section.name}</h2>
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+              {isCombined ? 'Combined (All Students)' : section.name}
+            </h2>
             <span
               className={`px-3 py-1 rounded-full text-xs font-bold ${
-                isFull
-                  ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-800 dark:text-rose-300'
-                  : totalCount >= 80
-                  ? 'bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300'
-                  : 'bg-[#2B547E]/10 dark:bg-blue-500/10 text-[#2B547E] dark:text-blue-400'
+                isCombined
+                  ? 'bg-indigo-100 dark:bg-indigo-950/60 text-indigo-800 dark:text-indigo-300'
+                  : 'bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300'
               }`}
             >
-              {totalCount} / {maxLimit} Students
+              {totalCount} Students
             </span>
           </div>
         </div>
 
         {/* Action buttons with touch-friendly min 40px–42px targets */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Add Student */}
+          {/* Attendance Download CSV (available in all views) */}
           <button
             type="button"
-            disabled={isFull || isExpired}
-            onClick={() => {
-              setSelectedStudentForEdit(null);
-              setStudentModalOpen(true);
-            }}
-            className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
-            title={isExpired ? 'Account expired (read-only)' : isFull ? 'Section limit reached (100 students)' : 'Add Student'}
+            onClick={handleDownloadAttendance}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+            title="Download Attendance CSV"
           >
-            <UserPlus className="w-4 h-4" />
-            <span>Add Student</span>
+            <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+            <span>Attendance Download</span>
           </button>
+
+          {/* Add Student (for regular sections) */}
+          {!isCombined && (
+            <button
+              type="button"
+              disabled={isExpired}
+              onClick={() => {
+                setSelectedStudentForEdit(null);
+                setStudentModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] text-white rounded-xl text-xs font-semibold shadow-xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors"
+              title={isExpired ? 'Account expired (read-only)' : 'Add Student'}
+            >
+              <UserPlus className="w-4 h-4" />
+              <span>Add Student</span>
+            </button>
+          )}
 
           {/* Download CSV Template (Roll, Name, Symbol, Contact) */}
           <button
             type="button"
             onClick={handleDownloadStudentTemplate}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            title="Download CSV student info template (Roll Number, Student Name, Symbol Number, Contact Number)"
+            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+            title="Download CSV student info template"
           >
             <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
             <span>Download Template</span>
           </button>
 
           {/* Upload Student Info (CSV) */}
-          <button
-            type="button"
-            disabled={isExpired}
-            onClick={() => setStudentUploadOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            title={isExpired ? 'Account expired (read-only)' : 'Import student info from CSV'}
-          >
-            <UploadCloud className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
-            <span>Upload Student Info</span>
-          </button>
+          {!isCombined && (
+            <button
+              type="button"
+              disabled={isExpired}
+              onClick={() => setStudentUploadOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 disabled:opacity-50 disabled:cursor-not-allowed text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              title={isExpired ? 'Account expired (read-only)' : 'Import student info from CSV'}
+            >
+              <UploadCloud className="w-4 h-4 text-[#2B547E] dark:text-blue-400" />
+              <span>Upload Student Info</span>
+            </button>
+          )}
 
           {/* In-Browser Marks Table */}
-          <button
-            type="button"
-            onClick={() => setMarksTableOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
-            title="Open interactive marks sheet"
-          >
-            <Table className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-            <span>Marks</span>
-          </button>
+          {!isCombined && (
+            <button
+              type="button"
+              onClick={() => setMarksTableOpen(true)}
+              className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              title="Open interactive marks sheet"
+            >
+              <Table className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+              <span>Marks</span>
+            </button>
+          )}
 
           {/* Attendance (only shown if class attendance is enabled) */}
-          {currentClass.attendanceEnabled && (
+          {!isCombined && currentClass.attendanceEnabled && (
             <button
               type="button"
               onClick={() => setAttendanceOpen(true)}
@@ -258,22 +325,18 @@ export const SectionDetailView: React.FC<Props> = ({
         </div>
       )}
 
-      {/* 100-student cap warning banner if at max limit */}
-      {isFull && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex items-center gap-3 text-amber-900 dark:text-amber-300 text-xs">
-          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
-          <span>
-            <strong>Capacity Reached:</strong> This section has reached the maximum allowed limit of 100 students. To enroll more students, please create a new section in the Class Overview.
-          </span>
-        </div>
-      )}
-
-      {/* Search and Student Roster Table */}
-      <div className="bg-white dark:bg-[#1A2232] rounded-2xl border border-slate-200/80 dark:border-slate-700/80 p-6 shadow-xs space-y-4 transition-colors">
+      {/* Search and Student Roster Table with matching border */}
+      <div
+        className={`rounded-2xl border-2 p-6 shadow-xs space-y-4 transition-colors ${
+          isCombined
+            ? 'bg-white dark:bg-[#1A2232] border-indigo-500/40 dark:border-indigo-500/30'
+            : 'bg-white dark:bg-[#1A2232] border-emerald-500/40 dark:border-emerald-500/30'
+        }`}
+      >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-2 font-bold text-slate-900 dark:text-slate-100 text-base">
             <Users className="w-5 h-5 text-[#2B547E] dark:text-blue-400" />
-            <span>Enrolled Students</span>
+            <span>{isCombined ? 'All Students (Sorted by Section)' : 'Enrolled Students'}</span>
           </div>
 
           <div className="relative max-w-xs w-full">
@@ -288,7 +351,7 @@ export const SectionDetailView: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* Responsive Student Table with Sticky Roll & Student Name on mobile */}
+        {/* Responsive Student Table */}
         <div className="overflow-x-auto border border-slate-200 dark:border-slate-700 rounded-xl relative">
           <table className="w-full text-left text-xs min-w-[600px]">
             <thead className="bg-[#F4F6FA] dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 uppercase text-[10px] tracking-wider">
@@ -299,6 +362,11 @@ export const SectionDetailView: React.FC<Props> = ({
                 <th className="py-3 px-4 sticky left-20 z-10 bg-[#F4F6FA] dark:bg-[#0F172A]">
                   Student Name
                 </th>
+                {isCombined && (
+                  <th className="py-3 px-4">
+                    Section
+                  </th>
+                )}
                 <th className="py-3 px-4">Symbol Number</th>
                 <th className="py-3 px-4">Contact Number</th>
                 <th className="py-3 px-4 text-right">Actions</th>
@@ -307,14 +375,16 @@ export const SectionDetailView: React.FC<Props> = ({
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400">
+                  <td colSpan={isCombined ? 6 : 5} className="py-12 text-center text-slate-400">
                     Loading student roster...
                   </td>
                 </tr>
               ) : students.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-12 text-center text-slate-400">
-                    No students found in this section. Click &ldquo;Add Student&rdquo; to begin enrollment.
+                  <td colSpan={isCombined ? 6 : 5} className="py-12 text-center text-slate-400">
+                    {isCombined
+                      ? 'No students enrolled across any section in this class yet.'
+                      : 'No students found in this section. Click "Add Student" to begin enrollment.'}
                   </td>
                 </tr>
               ) : (
@@ -326,6 +396,13 @@ export const SectionDetailView: React.FC<Props> = ({
                     <td className="py-3.5 px-4 font-semibold text-slate-900 dark:text-slate-100 sticky left-20 z-10 bg-white dark:bg-[#1A2232] group-hover:bg-slate-50 dark:group-hover:bg-slate-800/60 whitespace-nowrap">
                       {student.studentName}
                     </td>
+                    {isCombined && (
+                      <td className="py-3.5 px-4">
+                        <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                          {student.sectionName || 'Section'}
+                        </span>
+                      </td>
+                    )}
                     <td className="py-3.5 px-4 font-mono text-slate-600 dark:text-slate-400 text-[11px]">
                       {student.symbolNumber}
                     </td>
@@ -344,29 +421,33 @@ export const SectionDetailView: React.FC<Props> = ({
                       </button>
 
                       {/* Edit Student (no password needed) */}
-                      <button
-                        type="button"
-                        disabled={isExpired}
-                        onClick={() => {
-                          setSelectedStudentForEdit(student);
-                          setStudentModalOpen(true);
-                        }}
-                        className="p-2 min-w-[36px] min-h-[36px] text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
-                        title={isExpired ? 'Account expired (read-only)' : 'Edit Student Information'}
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
+                      {!isCombined && (
+                        <button
+                          type="button"
+                          disabled={isExpired}
+                          onClick={() => {
+                            setSelectedStudentForEdit(student);
+                            setStudentModalOpen(true);
+                          }}
+                          className="p-2 min-w-[36px] min-h-[36px] text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
+                          title={isExpired ? 'Account expired (read-only)' : 'Edit Student Information'}
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                      )}
 
                       {/* Delete Student (prompts for current login password) */}
-                      <button
-                        type="button"
-                        disabled={isExpired}
-                        onClick={() => setStudentToDelete(student)}
-                        className="p-2 min-w-[36px] min-h-[36px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
-                        title={isExpired ? 'Account expired (read-only)' : 'Delete Student (Requires Password)'}
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      {!isCombined && (
+                        <button
+                          type="button"
+                          disabled={isExpired}
+                          onClick={() => setStudentToDelete(student)}
+                          className="p-2 min-w-[36px] min-h-[36px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg cursor-pointer transition-colors inline-flex items-center justify-center"
+                          title={isExpired ? 'Account expired (read-only)' : 'Delete Student (Requires Password)'}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -381,7 +462,6 @@ export const SectionDetailView: React.FC<Props> = ({
         isOpen={studentModalOpen}
         student={selectedStudentForEdit}
         sectionName={section.name}
-        isSectionFull={isFull}
         onClose={() => {
           setStudentModalOpen(false);
           setSelectedStudentForEdit(null);

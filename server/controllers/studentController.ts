@@ -3,7 +3,79 @@ import { ObjectId } from 'mongodb';
 import { getDatabase } from '../db.ts';
 import { comparePassword } from '../auth.ts';
 
-const MAX_STUDENTS_PER_SECTION = 100;
+const MAX_STUDENTS_PER_SECTION = 1000;
+const MAX_STUDENTS_PER_CLASS = 2000;
+
+export async function listClassStudents(req: Request, res: Response) {
+  const { classId } = req.params;
+  const search = req.query.search as string | undefined;
+
+  try {
+    const db = getDatabase();
+    const sections = await db.collection('sections')
+      .find({ classId })
+      .sort({ order: 1, name: 1 })
+      .toArray();
+
+    const sectionMap = new Map<string, string>();
+    const sectionOrderMap = new Map<string, number>();
+    sections.forEach((s, idx) => {
+      sectionMap.set(s._id.toString(), s.name);
+      sectionOrderMap.set(s._id.toString(), s.order !== undefined ? s.order : idx);
+    });
+
+    const query: any = { classId };
+    if (search && search.trim() !== '') {
+      const capped = search.trim().slice(0, 50);
+      const escaped = capped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, 'i');
+      query.$or = [
+        { studentName: regex },
+        { symbolNumber: regex },
+        { rollNumber: !isNaN(Number(capped)) ? Number(capped) : -999999 },
+      ];
+    }
+
+    const students = await db.collection('students').find(query).toArray();
+
+    // Sort according to section, then by rollNumber
+    students.sort((a, b) => {
+      const orderA = sectionOrderMap.get(a.sectionId) ?? 999;
+      const orderB = sectionOrderMap.get(b.sectionId) ?? 999;
+      if (orderA !== orderB) return orderA - orderB;
+
+      const nameA = sectionMap.get(a.sectionId) || '';
+      const nameB = sectionMap.get(b.sectionId) || '';
+      const nameComp = nameA.localeCompare(nameB);
+      if (nameComp !== 0) return nameComp;
+
+      return (a.rollNumber || 0) - (b.rollNumber || 0);
+    });
+
+    const formatted = students.map((s) => ({
+      id: s._id.toString(),
+      teacherId: s.teacherId,
+      classId: s.classId,
+      sectionId: s.sectionId,
+      sectionName: sectionMap.get(s.sectionId) || 'Unknown Section',
+      rollNumber: s.rollNumber,
+      studentName: s.studentName,
+      symbolNumber: s.symbolNumber,
+      contactNumber: s.contactNumber || s.parentContact || '',
+      parentContact: s.contactNumber || s.parentContact || '',
+      createdAt: s.createdAt,
+    }));
+
+    return res.json({
+      success: true,
+      data: formatted,
+      totalCount: formatted.length,
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+  }
+}
 
 export async function listStudents(req: Request, res: Response) {
   const { sectionId } = req.params;
@@ -94,17 +166,33 @@ export async function createStudent(req: Request, res: Response) {
   try {
     const db = getDatabase();
 
-    // 1. Strict limit verification: Max 100 students per section
+    // Get parent section to extract classId
+    const sectionDoc = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!sectionDoc) {
+      return res.status(404).json({ success: false, message: 'Section not found.' });
+    }
+
+    // 1. Strict limit verification: Max 1000 students per section
     const currentCount = await db.collection('students').countDocuments({ sectionId });
     if (currentCount >= MAX_STUDENTS_PER_SECTION) {
       return res.status(400).json({
         success: false,
         error: 'SECTION_LIMIT_REACHED',
-        message: 'You have reached the maximum of 100 students in this section.',
+        message: 'Max number of students limit reached (1000 per section)',
       });
     }
 
-    // 2. Uniqueness check for Roll Number in section
+    // 2. Strict limit verification: Max 2000 students per class
+    const classCount = await db.collection('students').countDocuments({ classId: sectionDoc.classId });
+    if (classCount >= MAX_STUDENTS_PER_CLASS) {
+      return res.status(400).json({
+        success: false,
+        error: 'CLASS_LIMIT_REACHED',
+        message: 'Max number of students limit reached (2000 per class)',
+      });
+    }
+
+    // 3. Uniqueness check for Roll Number in section
     const existingRoll = await db.collection('students').findOne({ sectionId, rollNumber: rollNum });
     if (existingRoll) {
       return res.status(409).json({
@@ -113,7 +201,7 @@ export async function createStudent(req: Request, res: Response) {
       });
     }
 
-    // 3. Uniqueness check for Symbol Number in section
+    // 4. Uniqueness check for Symbol Number in section
     const cleanSymbol = symbolNumber.trim();
     const existingSymbol = await db.collection('students').findOne({ sectionId, symbolNumber: cleanSymbol });
     if (existingSymbol) {
@@ -121,12 +209,6 @@ export async function createStudent(req: Request, res: Response) {
         success: false,
         message: `A student with Symbol Number "${cleanSymbol}" already exists in this section.`,
       });
-    }
-
-    // Get parent section to extract classId
-    const sectionDoc = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!sectionDoc) {
-      return res.status(404).json({ success: false, message: 'Section not found.' });
     }
 
     const now = new Date().toISOString();
@@ -149,7 +231,7 @@ export async function createStudent(req: Request, res: Response) {
       return res.status(400).json({
         success: false,
         error: 'SECTION_LIMIT_REACHED',
-        message: 'You have reached the maximum of 100 students in this section.',
+        message: 'Max number of students limit reached (1000 per section)',
       });
     }
 

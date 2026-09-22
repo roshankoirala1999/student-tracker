@@ -676,13 +676,13 @@ export async function getTeacherNotifications(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
+    const orClauses: any[] = [{ teacherId }, { teacherId: teacherId.toString() }];
+    if (ObjectId.isValid(teacherId)) {
+      orClauses.push({ teacherId: new ObjectId(teacherId) });
+    }
+
     const notifications = await db.collection('notifications')
-      .find({
-        $or: [
-          { teacherId },
-          { teacherId: teacherId.toString() }
-        ]
-      })
+      .find({ $or: orClauses })
       .sort({ createdAt: -1 })
       .toArray();
 
@@ -716,13 +716,13 @@ export async function markNotificationsRead(req: Request, res: Response) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
 
+    const orClauses: any[] = [{ teacherId }, { teacherId: teacherId.toString() }];
+    if (ObjectId.isValid(teacherId)) {
+      orClauses.push({ teacherId: new ObjectId(teacherId) });
+    }
+
     await db.collection('notifications').updateMany(
-      {
-        $or: [
-          { teacherId },
-          { teacherId: teacherId.toString() }
-        ]
-      },
+      { $or: orClauses },
       { $set: { read: true, isRead: true } }
     );
 

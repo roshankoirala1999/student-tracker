@@ -18,15 +18,23 @@ export const TeacherNotificationDropdown: React.FC = () => {
 
   const fetchNotifications = async (markReadIfOpen = false) => {
     try {
-      const res = await apiRequest<NotificationItem[]>('/api/notifications');
+      const res = await apiRequest<{ data?: NotificationItem[]; unreadCount?: number } | NotificationItem[]>('/api/notifications');
       if (res.success && res.data) {
+        const notifList: NotificationItem[] = Array.isArray(res.data) ? res.data : (res.data as any).data || [];
+        const lastReadTimestamp = localStorage.getItem('notifications_last_read');
+        const lastReadTime = lastReadTimestamp ? new Date(lastReadTimestamp).getTime() : 0;
+
         if (isOpenRef.current || markReadIfOpen) {
           // If viewing, all are read
-          setNotifications(res.data.map((n) => ({ ...n, read: true, isRead: true })));
+          setNotifications(notifList.map((n) => ({ ...n, read: true, isRead: true })));
           setUnreadCount(0);
         } else {
-          setNotifications(res.data);
-          const unread = res.data.filter((n) => !(n.read || n.isRead)).length;
+          const updated = notifList.map((n) => {
+            const isRead = !!(n.read || n.isRead) || (lastReadTime > 0 && new Date(n.createdAt).getTime() <= lastReadTime);
+            return { ...n, read: isRead, isRead };
+          });
+          setNotifications(updated);
+          const unread = updated.filter((n) => !n.read).length;
           setUnreadCount(unread);
         }
       }
@@ -63,6 +71,7 @@ export const TeacherNotificationDropdown: React.FC = () => {
 
     if (nextState) {
       // User is viewing notifications now -> immediately clear badge count to 0
+      localStorage.setItem('notifications_last_read', new Date().toISOString());
       setUnreadCount(0);
       setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true, read: true })));
 

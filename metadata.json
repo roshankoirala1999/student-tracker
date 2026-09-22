@@ -1,6 +1,6 @@
 {
-  "name": "Student Tracker",
-  "description": "A production-grade full-stack student, class, examination, marks, and attendance management system for teachers and administrators.",
+  "name": "Student management",
+  "description": "A production-grade student, class, examination, marks, and attendance management system.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
