@@ -10,6 +10,7 @@ import * as assessCtrl from './controllers/assessmentController.ts';
 import * as marksCtrl from './controllers/marksController.ts';
 import * as attendCtrl from './controllers/attendanceController.ts';
 import * as adminCtrl from './controllers/adminController.ts';
+import * as messageCtrl from './controllers/messageController.ts';
 
 const api = Router();
 
@@ -162,5 +163,13 @@ api.get('/admin/profile-questions', requireMasterAdmin, authCtrl.listProfileQues
 api.post('/admin/profile-questions', requireMasterAdmin, authCtrl.createProfileQuestion);
 api.put('/admin/profile-questions/reorder', requireMasterAdmin, authCtrl.reorderProfileQuestions);
 api.delete('/admin/profile-questions/:id', requireMasterAdmin, authCtrl.deleteProfileQuestion);
+
+// 2-Way Messaging System (Teacher <-> Admin, Teacher <-> Teacher)
+api.get('/messages/conversations', requireAuth, messageCtrl.getConversations);
+api.get('/messages/search-teachers', requireAuth, messageCtrl.searchTeachers);
+api.get('/messages/thread/:targetId', requireAuth, messageCtrl.getThread);
+api.post('/messages/send', requireAuth, messageCtrl.sendMessage);
+api.get('/messages/unread-count', requireAuth, messageCtrl.getUnreadCount);
+api.patch('/messages/thread/:targetId/read', requireAuth, messageCtrl.markThreadRead);
 
 export default api;

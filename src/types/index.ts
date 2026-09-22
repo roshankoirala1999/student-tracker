@@ -187,3 +187,40 @@ export interface ApiResponse<T = any> {
   totalCount?: number;
   maxLimit?: number;
 }
+
+export interface ChatMessage {
+  id: string;
+  conversationId: string;
+  senderId: string;
+  senderUsername: string;
+  senderFullName?: string;
+  senderRole: string;
+  recipientId: string;
+  recipientUsername: string;
+  recipientFullName?: string;
+  recipientRole: string;
+  message: string;
+  read: boolean;
+  createdAt: string;
+  isMine: boolean;
+}
+
+export interface ConversationItem {
+  conversationId: string;
+  participantId: string;
+  participantUsername: string;
+  participantFullName?: string;
+  participantRole: string;
+  participantPhoneNumber?: string;
+  lastMessage: string;
+  lastMessageAt: string;
+  unreadCount: number;
+}
+
+export interface TeacherSearchItem {
+  id: string;
+  username: string;
+  fullName: string;
+  phoneNumber: string;
+}
+

@@ -791,6 +791,22 @@ export async function sendTeacherNotification(req: Request, res: Response) {
 
     const result = await db.collection('notifications').insertOne(newNotification);
 
+    // Also write into messages collection for seamless 2-way conversation thread
+    await db.collection('messages').insertOne({
+      conversationId: `admin:${teacherId}`,
+      senderId: 'admin',
+      senderUsername: req.user?.username || 'admin',
+      senderFullName: 'Master Administrator',
+      senderRole: req.user?.role || 'master_admin',
+      recipientId: teacherId,
+      recipientUsername: teacher.username,
+      recipientFullName: teacher.fullName || '',
+      recipientRole: 'teacher',
+      message: message.trim(),
+      read: false,
+      createdAt: newNotification.createdAt,
+    });
+
     return res.json({
       success: true,
       message: 'Notification sent successfully.',

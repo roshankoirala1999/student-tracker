@@ -3,7 +3,7 @@ import { GraduationCap, LogOut, ShieldCheck, User, Sun, Moon, Menu, Maximize, Mi
 import { useAuth } from '../../context/AuthContext.tsx';
 import { useTheme } from '../../context/ThemeContext.tsx';
 import { TeacherProfileModal } from '../auth/TeacherProfileModal.tsx';
-import { TeacherNotificationDropdown } from './TeacherNotificationDropdown.tsx';
+import { TeacherMessagingBar } from '../messaging/TeacherMessagingBar.tsx';
 
 interface Props {
   viewMode: 'app' | 'admin';
@@ -148,8 +148,8 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
               </div>
             )}
 
-            {/* Notification Bell in between Teacher Profile and Logout */}
-            {!isAdmin && <TeacherNotificationDropdown />}
+            {/* 2-Way Direct Messaging Bar */}
+            <TeacherMessagingBar />
 
             {/* Log Out */}
             <button

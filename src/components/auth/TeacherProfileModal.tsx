@@ -335,8 +335,8 @@ export const TeacherProfileModal: React.FC<Props> = ({ isOpen, onClose }) => {
                   <span>{user.fullName || '—'}</span>
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Managed by administrator.
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium mt-1 block">
+                  It cannot be edited here, please contact administrator.
                 </span>
               </div>
 

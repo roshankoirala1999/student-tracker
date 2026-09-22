@@ -26,8 +26,12 @@ export async function registerTeacher(req: Request, res: Response) {
     return res.status(400).json({ success: false, message: 'Full Name is required.' });
   }
 
-  if (!phoneNumber || typeof phoneNumber !== 'string' || phoneNumber.trim().length === 0) {
-    return res.status(400).json({ success: false, message: 'Phone Number is required.' });
+  const cleanPhone = (typeof phoneNumber === 'string' ? phoneNumber : String(phoneNumber || '')).trim().replace(/[\s-]/g, '');
+  if (!cleanPhone || !/^\d{10}$/.test(cleanPhone)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Phone number must be a valid 10-digit number (numbers only).',
+    });
   }
 
   if (!username || typeof username !== 'string' || username.trim().length < 3) {
@@ -81,7 +85,7 @@ export async function registerTeacher(req: Request, res: Response) {
     const insertResult = await db.collection('users').insertOne({
       username: cleanUsername,
       fullName: fullName.trim(),
-      phoneNumber: phoneNumber.trim(),
+      phoneNumber: cleanPhone,
       college: '',
       dob: '',
       customFields: {},
@@ -119,7 +123,7 @@ export async function registerTeacher(req: Request, res: Response) {
         id: userId,
         username: cleanUsername,
         fullName: fullName.trim(),
-        phoneNumber: phoneNumber.trim(),
+        phoneNumber: cleanPhone,
         college: '',
         dob: '',
         customFields: {},

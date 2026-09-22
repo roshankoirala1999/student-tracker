@@ -28,13 +28,16 @@ import {
   Code,
   Bell,
   FileSpreadsheet,
+  MessageSquare,
 } from 'lucide-react';
 import { apiRequest } from '../../api/client.ts';
+import { useAuth } from '../../context/AuthContext.tsx';
 import { PasswordConfirmModal } from '../common/PasswordConfirmModal.tsx';
 import { ProfileQuestion, DeveloperContact } from '../../types/index.ts';
 import { TeacherExpiryModal } from './TeacherExpiryModal.tsx';
 import { NewUserDefaultsModal } from './NewUserDefaultsModal.tsx';
 import { AdminNotificationModal } from './AdminNotificationModal.tsx';
+import { MessagingModal } from '../messaging/MessagingModal.tsx';
 
 interface TeacherItem {
   id: string;
@@ -105,11 +108,13 @@ interface InspectedData {
 }
 
 export const MasterAdminView: React.FC = () => {
+  const { user } = useAuth();
   const [teachers, setTeachers] = useState<TeacherItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [messagingModalTeacher, setMessagingModalTeacher] = useState<TeacherItem | null>(null);
 
   // Password visibility map (by teacher id)
   const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
@@ -685,15 +690,15 @@ export const MasterAdminView: React.FC = () => {
                           </span>
                         </button>
 
-                        {/* Send Notification to Teacher */}
+                        {/* Message Teacher (2-Way Direct Messaging) */}
                         <button
                           type="button"
-                          onClick={() => setNotificationModalTeacher(t)}
+                          onClick={() => setMessagingModalTeacher(t)}
                           className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-50 dark:bg-blue-950/40 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-800 dark:text-blue-300 cursor-pointer transition-colors"
-                          title="Send notification to teacher"
+                          title="Message teacher via 2-way chat"
                         >
                           <span className="flex items-center gap-1 inline-flex">
-                            <Bell className="w-3.5 h-3.5" /> Send notification
+                            <MessageSquare className="w-3.5 h-3.5" /> Message Teacher
                           </span>
                         </button>
 
@@ -1393,7 +1398,17 @@ export const MasterAdminView: React.FC = () => {
         }}
       />
 
-      {/* Admin Notification Modal */}
+      {/* Admin 2-Way Messaging Modal */}
+      {user && (
+        <MessagingModal
+          isOpen={messagingModalTeacher !== null}
+          currentUser={user}
+          initialTargetTeacher={messagingModalTeacher}
+          onClose={() => setMessagingModalTeacher(null)}
+        />
+      )}
+
+      {/* Admin Notification Modal (Legacy) */}
       <AdminNotificationModal
         isOpen={notificationModalTeacher !== null}
         teacher={notificationModalTeacher}

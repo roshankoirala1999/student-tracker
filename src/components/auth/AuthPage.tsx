@@ -92,7 +92,7 @@ export const AuthPage: React.FC = () => {
     setSuccessMsg(null);
 
     const cleanFullName = fullName.trim();
-    const cleanPhone = phoneNumber.trim();
+    const cleanPhone = phoneNumber.trim().replace(/[\s-]/g, '');
     const cleanUsername = username.trim().toLowerCase();
 
     if (!cleanFullName) {
@@ -100,8 +100,8 @@ export const AuthPage: React.FC = () => {
       return;
     }
 
-    if (!cleanPhone) {
-      setError('Please provide your Phone Number.');
+    if (!cleanPhone || !/^\d{10}$/.test(cleanPhone)) {
+      setError('Phone number must be a valid 10-digit number (numbers only, e.g. 9801234567).');
       return;
     }
 
@@ -333,6 +333,9 @@ export const AuthPage: React.FC = () => {
                   />
                   <User className="w-4 h-4 text-slate-400 absolute right-3 top-3" />
                 </div>
+                <p className="text-[11px] text-amber-600 dark:text-amber-400 font-medium mt-1">
+                  Please use your real name. It cannot be edited later on.
+                </p>
               </div>
 
               <div>
@@ -343,12 +346,27 @@ export const AuthPage: React.FC = () => {
                   <input
                     type="tel"
                     required
+                    maxLength={10}
+                    inputMode="numeric"
                     value={phoneNumber}
                     onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="e.g. +977-9800000000"
-                    className="w-full px-3 py-2.5 text-sm rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 pr-10"
+                    placeholder="e.g. 9801234567"
+                    className={`w-full px-3 py-2.5 text-sm rounded-xl border ${
+                      phoneNumber && !/^\d{10}$/.test(phoneNumber.trim())
+                        ? 'border-rose-400 focus:ring-rose-500'
+                        : 'border-slate-300 dark:border-slate-700 focus:ring-[#2B547E] dark:focus:ring-blue-500'
+                    } bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 pr-10`}
                   />
                 </div>
+                {phoneNumber && !/^\d{10}$/.test(phoneNumber.trim()) ? (
+                  <p className="text-[11px] text-rose-500 font-semibold mt-1">
+                    Phone number must be a 10-digit number (numbers only, e.g. 9801234567).
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1">
+                    Must be exactly 10 digits (numbers only).
+                  </p>
+                )}
               </div>
 
               <div>
