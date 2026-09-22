@@ -17,7 +17,6 @@ export interface UserProfile {
   college?: string;
   dob?: string;
   customFields?: Record<string, string>;
-  plainPassword?: string;
   role: UserRole;
   status: UserStatus;
   isDeletionLocked?: boolean;
@@ -42,7 +41,6 @@ export interface TeacherItem {
   college?: string;
   dob?: string;
   customFields?: Record<string, string>;
-  plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
   isReadOnly?: boolean;

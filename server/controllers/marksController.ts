@@ -11,6 +11,10 @@ export async function getSectionMarksMatrix(req: Request, res: Response) {
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
 
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     const classId = section.classId;
 
     const students = await db.collection('students')
@@ -93,6 +97,10 @@ export async function updateSingleMark(req: Request, res: Response) {
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
 
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     if (!ObjectId.isValid(studentId)) {
       return res.status(400).json({ success: false, message: 'Invalid student ID.' });
     }
@@ -169,6 +177,10 @@ export async function exportStudentRosterCsv(req: Request, res: Response) {
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
 
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
 
     const students = await db.collection('students')
@@ -209,7 +221,7 @@ export async function exportStudentRosterCsv(req: Request, res: Response) {
 /**
  * 2. STUDENT INFO CSV IMPORT (Section view)
  * Strictly imports student roster info (Roll Number, Student Name, Symbol Number, Contact Number).
- * No marks logic here.
+ * No marks logic here. Handles roll-number swaps cleanly without corrupting student records.
  */
 export async function importStudentRosterCsv(req: Request, res: Response) {
   const { sectionId } = req.params;
@@ -223,6 +235,10 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     const db = getDatabase();
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
 
     const rawRows = parseCsv(csvText);
     if (rawRows.length < 2) {
@@ -295,14 +311,52 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       });
     }
 
-    // Check 100 students limit
+    // Existing students in section
     const existingStudents = await db.collection('students').find({ sectionId }).toArray();
+    const existingBySymbol = new Map<string, any>();
     const existingByRoll = new Map<number, any>();
-    existingStudents.forEach((s) => existingByRoll.set(s.rollNumber, s));
+    existingStudents.forEach((s) => {
+      if (s.symbolNumber) existingBySymbol.set(s.symbolNumber.trim().toLowerCase(), s);
+      existingByRoll.set(s.rollNumber, s);
+    });
 
-    // Verify symbol numbers against non-updated students in the same section
-    const parsedRolls = new Set(parsedStudents.map((p) => p.rollNumber));
-    const nonUpdatedStudents = existingStudents.filter((s) => !parsedRolls.has(s.rollNumber));
+    // Student identity matching (to handle roll-number swaps cleanly without corrupting student records)
+    const claimedStudentIds = new Set<string>();
+    const resolvedStudents: Array<{
+      rollNumber: number;
+      studentName: string;
+      symbolNumber: string;
+      contactNumber: string;
+      matchedDoc?: any;
+    }> = parsedStudents.map((p) => ({ ...p }));
+
+    // Pass 1: Match by Symbol Number (primary unique identifier in section)
+    for (const p of resolvedStudents) {
+      const matchBySym = existingBySymbol.get(p.symbolNumber.toLowerCase());
+      if (matchBySym) {
+        p.matchedDoc = matchBySym;
+        claimedStudentIds.add(matchBySym._id.toString());
+      }
+    }
+
+    // Pass 2: For any remaining unmatched rows, check if roll number matches an unclaimed existing student
+    // whose symbol was not used in this file (e.g. symbol number was edited for that roll number)
+    const parsedSymbolsSet = new Set(parsedStudents.map((p) => p.symbolNumber.toLowerCase()));
+    for (const p of resolvedStudents) {
+      if (!p.matchedDoc) {
+        const matchByRoll = existingByRoll.get(p.rollNumber);
+        if (matchByRoll && !claimedStudentIds.has(matchByRoll._id.toString())) {
+          const oldSym = (matchByRoll.symbolNumber || '').trim().toLowerCase();
+          if (!parsedSymbolsSet.has(oldSym)) {
+            p.matchedDoc = matchByRoll;
+            claimedStudentIds.add(matchByRoll._id.toString());
+          }
+        }
+      }
+    }
+
+    // Check non-updated students in the same section for symbol conflicts
+    const nonUpdatedStudents = existingStudents.filter((s) => !claimedStudentIds.has(s._id.toString()));
     const nonUpdatedSymbols = new Map<string, any>();
     nonUpdatedStudents.forEach((s) => {
       if (s.symbolNumber) {
@@ -310,7 +364,7 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       }
     });
 
-    for (const p of parsedStudents) {
+    for (const p of resolvedStudents) {
       const conflict = nonUpdatedSymbols.get(p.symbolNumber.toLowerCase());
       if (conflict) {
         errors.push(
@@ -327,11 +381,7 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       });
     }
 
-    let newCount = 0;
-    parsedStudents.forEach((p) => {
-      if (!existingByRoll.has(p.rollNumber)) newCount++;
-    });
-
+    const newCount = resolvedStudents.filter((p) => !p.matchedDoc).length;
     if (existingStudents.length + newCount > 1000) {
       return res.status(400).json({
         success: false,
@@ -347,38 +397,41 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       });
     }
 
-    // Phase 1: Free symbolNumber unique constraints on updated students to avoid swap collision errors
-    const matchedStudents = parsedStudents
-      .map((p) => existingByRoll.get(p.rollNumber))
-      .filter(Boolean);
-
-    if (matchedStudents.length > 0) {
+    // Phase 1: Assign temporary roll and symbol numbers to matched existing students to prevent unique constraint collisions during swaps
+    const matchedList = resolvedStudents.filter((p) => p.matchedDoc);
+    if (matchedList.length > 0) {
       const swapTimestamp = Date.now();
       await Promise.all(
-        matchedStudents.map((match, idx) =>
+        matchedList.map((p, idx) =>
           db.collection('students').updateOne(
-            { _id: match._id },
-            { $set: { symbolNumber: `__TEMP_SWAP_${match._id.toString()}_${swapTimestamp}_${idx}` } }
+            { _id: p.matchedDoc._id },
+            {
+              $set: {
+                rollNumber: -1 * (idx + 100000),
+                symbolNumber: `__TEMP_SWAP_${p.matchedDoc._id.toString()}_${swapTimestamp}_${idx}`,
+              },
+            }
           )
         )
       );
     }
 
-    // Phase 2: Perform final upserts with clean student roster data
+    // Phase 2: Perform final updates and insertions with clean student roster data
     const now = new Date().toISOString();
     let upsertCount = 0;
 
-    for (const p of parsedStudents) {
-      const match = existingByRoll.get(p.rollNumber);
-      if (match) {
+    for (const p of resolvedStudents) {
+      if (p.matchedDoc) {
         await db.collection('students').updateOne(
-          { _id: match._id },
+          { _id: p.matchedDoc._id },
           {
             $set: {
+              rollNumber: p.rollNumber,
               studentName: p.studentName,
               symbolNumber: p.symbolNumber,
               contactNumber: p.contactNumber,
               parentContact: p.contactNumber,
+              updatedAt: now,
             },
           }
         );
@@ -423,6 +476,10 @@ export async function exportMarksCsv(req: Request, res: Response) {
     const db = getDatabase();
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
 
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
     const classId = section.classId;
@@ -497,6 +554,10 @@ export async function importMarksCsv(req: Request, res: Response) {
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
 
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     const classId = section.classId;
 
     // Load enrolled students in this section
@@ -515,9 +576,56 @@ export async function importMarksCsv(req: Request, res: Response) {
     const assignments = await db.collection('assignments').find({ classId }).toArray();
     const examinations = await db.collection('examinations').find({ classId }).toArray();
 
-    const itemByName = new Map<string, { id: string; type: 'assignment' | 'examination'; maxMarks: number; name: string }>();
-    assignments.forEach((a) => itemByName.set(a.name.trim().toLowerCase(), { id: a._id.toString(), type: 'assignment', maxMarks: a.maxMarks, name: a.name }));
-    examinations.forEach((e) => itemByName.set(e.name.trim().toLowerCase(), { id: e._id.toString(), type: 'examination', maxMarks: e.maxMarks, name: e.name }));
+    // Helper to find assessment item matching column name and type
+    const findAssessmentItem = (rawHeader: string) => {
+      const trimmed = rawHeader.trim();
+      const lower = trimmed.toLowerCase();
+
+      // Check if header specifies type
+      const isExamSpecified = /\b(exam|examination)\b/i.test(trimmed);
+      const isAssignmentSpecified = /\b(assignment|hw|homework)\b/i.test(trimmed);
+
+      // Clean prefix/suffix: "Exam: Final", "Assignment: Lab 1", "[Exam] Final", "Final (Exam)", "Final [100]"
+      const cleanName = trimmed
+        .replace(/^(exam|examination|assignment)\s*[:\-]\s*/i, '')
+        .replace(/^\[(exam|examination|assignment)\]\s*/i, '')
+        .replace(/^\((exam|examination|assignment)\)\s*/i, '')
+        .replace(/\s*\(?(exam|examination|assignment)\)?$/i, '')
+        .replace(/\s*\[?(exam|examination|assignment)\]?$/i, '')
+        .replace(/\s*\(\d+\)$/, '')
+        .replace(/\s*\[\d+\]$/, '')
+        .trim()
+        .toLowerCase();
+
+      // If exam explicitly specified, search examinations first
+      if (isExamSpecified && !isAssignmentSpecified) {
+        const examMatch = examinations.find((e) => e.name.trim().toLowerCase() === cleanName || e.name.trim().toLowerCase() === lower);
+        if (examMatch) {
+          return { id: examMatch._id.toString(), type: 'examination' as const, maxMarks: examMatch.maxMarks, name: examMatch.name };
+        }
+      }
+
+      // If assignment explicitly specified, search assignments first
+      if (isAssignmentSpecified && !isExamSpecified) {
+        const assignMatch = assignments.find((a) => a.name.trim().toLowerCase() === cleanName || a.name.trim().toLowerCase() === lower);
+        if (assignMatch) {
+          return { id: assignMatch._id.toString(), type: 'assignment' as const, maxMarks: assignMatch.maxMarks, name: assignMatch.name };
+        }
+      }
+
+      // Check exact name match against examinations and assignments
+      const examExact = examinations.find((e) => e.name.trim().toLowerCase() === lower || e.name.trim().toLowerCase() === cleanName);
+      if (examExact) {
+        return { id: examExact._id.toString(), type: 'examination' as const, maxMarks: examExact.maxMarks, name: examExact.name };
+      }
+
+      const assignExact = assignments.find((a) => a.name.trim().toLowerCase() === lower || a.name.trim().toLowerCase() === cleanName);
+      if (assignExact) {
+        return { id: assignExact._id.toString(), type: 'assignment' as const, maxMarks: assignExact.maxMarks, name: assignExact.name };
+      }
+
+      return null;
+    };
 
     const rawRows = parseCsv(csvText);
     if (rawRows.length < 2) {
@@ -549,12 +657,12 @@ export async function importMarksCsv(req: Request, res: Response) {
     for (let i = 3; i < headerRow.length; i++) {
       const colName = headerRow[i]?.trim();
       if (!colName) continue;
-      // If header is accidentally Total or Contact, ignore or warn
+      // If header is accidentally Total or Contact, ignore
       const lower = colName.toLowerCase();
       if (lower === 'total' || lower === 'total marks' || lower === 'contact' || lower === 'contact number') {
         continue;
       }
-      const match = itemByName.get(lower);
+      const match = findAssessmentItem(colName);
       if (match) {
         columnMappings.push({ colIdx: i, name: colName, item: match });
       } else {

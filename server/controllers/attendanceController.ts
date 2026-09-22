@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { getDatabase } from '../db.ts';
+import { formatCell } from '../utils/csv.ts';
 
 export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
   const { sectionId } = req.params;
@@ -9,6 +10,10 @@ export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
     const db = getDatabase();
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
 
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
     if (!classDoc || !classDoc.attendanceEnabled) {
@@ -81,6 +86,10 @@ export async function submitDailyAttendance(req: Request, res: Response) {
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
 
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
     if (!classDoc || !classDoc.attendanceEnabled) {
       return res.status(400).json({
@@ -134,55 +143,46 @@ export async function submitDailyAttendance(req: Request, res: Response) {
       status: r.status === 'absent' ? 'absent' : 'present',
     }));
 
-    // Check if attendance for this day already exists (overwrite scenario)
-    const existingDay = await db.collection('attendance').findOne({ sectionId, dayNumber });
-    if (existingDay) {
-      await db.collection('attendance').updateOne(
-        { _id: existingDay._id },
-        {
-          $set: {
-            records: validRecords,
-            comment: trimmedComment || (existingDay.comment || ''),
-            lastModifiedAt: now,
-          },
-        }
-      );
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          id: existingDay._id.toString(),
-          dayNumber,
-          submissionDate: existingDay.submissionDate,
-          comment: trimmedComment || (existingDay.comment || ''),
-          recordsCount: validRecords.length,
-          updated: true,
-        },
-        message: `Attendance for Day ${dayNumber} updated successfully.`,
-      });
-    }
-
-    const result = await db.collection('attendance').insertOne({
-      teacherId: section.teacherId,
-      classId: section.classId,
-      sectionId,
-      dayNumber,
-      submissionDate,
-      comment: trimmedComment,
-      records: validRecords,
-      createdAt: now,
-    });
-
-    return res.status(201).json({
-      success: true,
-      data: {
-        id: result.insertedId.toString(),
+    // Atomic upsert for this day record
+    const filter = { sectionId, dayNumber };
+    const updateDoc: any = {
+      $set: {
+        teacherId: section.teacherId,
+        classId: section.classId,
+        sectionId,
         dayNumber,
         submissionDate,
-        comment: trimmedComment,
-        recordsCount: validRecords.length,
+        records: validRecords,
+        lastModifiedAt: now,
       },
-      message: `Attendance for Day ${dayNumber} saved successfully.`,
+      $setOnInsert: {
+        createdAt: now,
+      },
+    };
+    if (trimmedComment) {
+      updateDoc.$set.comment = trimmedComment;
+    }
+
+    const result = await db.collection('attendance').findOneAndUpdate(
+      filter,
+      updateDoc,
+      { upsert: true, returnDocument: 'after' }
+    );
+
+    const doc = result;
+    const isUpdated = Boolean(doc?.lastModifiedAt && doc?.createdAt && doc.lastModifiedAt !== doc.createdAt);
+
+    return res.status(isUpdated ? 200 : 201).json({
+      success: true,
+      data: {
+        id: doc?._id?.toString() || '',
+        dayNumber,
+        submissionDate,
+        comment: doc?.comment || trimmedComment,
+        recordsCount: validRecords.length,
+        updated: isUpdated,
+      },
+      message: `Attendance for Day ${dayNumber} ${isUpdated ? 'updated' : 'saved'} successfully.`,
     });
   } catch (err: any) {
     if (err?.code === 11000) {
@@ -206,7 +206,7 @@ export async function getHistoricalDay(req: Request, res: Response) {
     if (!attendance) return res.status(404).json({ success: false, message: 'Attendance record not found.' });
 
     // Verify ownership
-    if (attendance.teacherId !== req.user!.userId) {
+    if (attendance.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
       return res.status(403).json({ success: false, message: 'You do not have permission to view this attendance.' });
     }
 
@@ -249,7 +249,7 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
     if (!attendance) return res.status(404).json({ success: false, message: 'Attendance record not found.' });
 
     // Verify ownership
-    if (attendance.teacherId !== req.user!.userId) {
+    if (attendance.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
       return res.status(403).json({ success: false, message: 'You do not have permission to edit this attendance.' });
     }
 
@@ -311,18 +311,6 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
   }
 }
 
-function escapeCsv(val: any): string {
-  if (val === null || val === undefined) return '';
-  let str = String(val);
-  if (/^\s*[=+\-@]/.test(str)) {
-    str = `'${str}`;
-  }
-  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-    return `"${str.replace(/"/g, '""')}"`;
-  }
-  return str;
-}
-
 export async function downloadAttendanceCsv(req: Request, res: Response) {
   const { classId } = req.params;
   const sectionIdQuery = req.query.sectionId as string | undefined;
@@ -331,6 +319,10 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
     const db = getDatabase();
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
     if (!classDoc) return res.status(404).json({ success: false, message: 'Class not found.' });
+
+    if (classDoc.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this class.' });
+    }
 
     // Find sections
     const sections = await db.collection('sections')
@@ -378,7 +370,7 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
 
     const attendanceDocs = await db.collection('attendance').find(attendanceQuery).toArray();
 
-    // Find highest day number recorded (default at least 30 as shown in Image 2)
+    // Find highest day number recorded
     let maxRecordedDay = 0;
     const statusMap = new Map<string, string>(); // `${studentId}_${dayNumber}` -> status
 
@@ -394,16 +386,21 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
       }
     });
 
-    const totalDays = Math.max(30, maxRecordedDay);
+    // Dynamically size columns based strictly on recorded days
+    const totalDays = maxRecordedDay;
 
-    // Build CSV strictly following Image 2 format
+    // Build CSV strictly following required format with anti-formula injection
     const rows: string[] = [];
     // Row 1: Class Name = <ClassName>
-    rows.push(`Class Name = ${classDoc.name}`);
+    rows.push(formatCell(`Class Name = ${classDoc.name || ''}`));
 
     // Row 2: Headers
-    const dayHeaders = Array.from({ length: totalDays }, (_, i) => i + 1);
-    rows.push(['Roll no', 'Symbol No', 'NAME', 'Section', ...dayHeaders, 'Total'].join(','));
+    const headers = ['Roll no', 'Symbol No', 'NAME', 'Section'];
+    for (let i = 1; i <= totalDays; i++) {
+      headers.push(String(i));
+    }
+    headers.push('Total');
+    rows.push(headers.map(formatCell).join(','));
 
     // Rows 3+: Students
     students.forEach((s) => {
@@ -423,12 +420,12 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
       }
 
       const row = [
-        s.rollNumber,
-        escapeCsv(s.symbolNumber || ''),
-        escapeCsv(s.studentName || ''),
-        escapeCsv(secName),
-        ...dayValues,
-        totalPresent,
+        formatCell(s.rollNumber),
+        formatCell(s.symbolNumber || ''),
+        formatCell(s.studentName || ''),
+        formatCell(secName),
+        ...dayValues.map(formatCell),
+        formatCell(totalPresent),
       ];
       rows.push(row.join(','));
     });
@@ -453,6 +450,10 @@ export async function downloadSectionAttendanceCsv(req: Request, res: Response) 
     const db = getDatabase();
     const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
     if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+
+    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
 
     req.params.classId = section.classId;
     req.query.sectionId = sectionId;

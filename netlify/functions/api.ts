@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import serverless from 'serverless-http';
 import cookieParser from 'cookie-parser';
@@ -21,7 +24,11 @@ app.use(cookieParser());
 
 // Ensure MongoDB is connected for warm/cold serverless lambda invocations
 app.use(async (req, res, next) => {
-  await connectToDatabase();
+  try {
+    await connectToDatabase();
+  } catch (err) {
+    console.error('[Netlify Function DB Error]:', err);
+  }
   next();
 });
 

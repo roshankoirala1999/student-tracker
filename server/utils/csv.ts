@@ -54,19 +54,19 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-export function generateCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
-  const formatCell = (val: string | number | null | undefined): string => {
-    if (val === null || val === undefined) return '';
-    let str = String(val);
-    if (/^\s*[=+\-@]/.test(str)) {
-      str = `'${str}`;
-    }
-    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  };
+export function formatCell(val: string | number | null | undefined): string {
+  if (val === null || val === undefined) return '';
+  let str = String(val);
+  if (/^\s*[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
 
+export function generateCsv(headers: string[], rows: (string | number | null | undefined)[][]): string {
   const headerLine = headers.map(formatCell).join(',');
   const rowLines = rows.map((r) => r.map(formatCell).join(','));
   return [headerLine, ...rowLines].join('\r\n');

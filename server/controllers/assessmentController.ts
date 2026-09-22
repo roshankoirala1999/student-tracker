@@ -71,6 +71,11 @@ export async function createExamination(req: Request, res: Response) {
       });
     }
 
+    const totalCount = await db.collection('examinations').countDocuments({ classId });
+    if (totalCount >= 50) {
+      return res.status(400).json({ success: false, message: 'Maximum limit of 50 examinations per class reached.' });
+    }
+
     const now = new Date().toISOString();
     const result = await db.collection('examinations').insertOne({
       teacherId: req.user!.userId,
@@ -156,6 +161,11 @@ export async function createAssignment(req: Request, res: Response) {
       });
     }
 
+    const totalCount = await db.collection('assignments').countDocuments({ classId });
+    if (totalCount >= 50) {
+      return res.status(400).json({ success: false, message: 'Maximum limit of 50 assignments per class reached.' });
+    }
+
     const now = new Date().toISOString();
     const result = await db.collection('assignments').insertOne({
       teacherId: req.user!.userId,
@@ -212,6 +222,10 @@ export async function updateAssessment(req: Request, res: Response) {
     const existing = await db.collection(collectionName).findOne({ _id: assessmentObjId, classId });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Assessment not found.' });
+    }
+
+    if (existing.teacherId && existing.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this assessment.' });
     }
 
     const cleanName = name.trim();
@@ -301,8 +315,12 @@ export async function deleteAssessment(req: Request, res: Response) {
       return res.status(404).json({ success: false, message: 'Assessment not found.' });
     }
 
+    if (existing.teacherId && existing.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this assessment.' });
+    }
+
     await db.collection(collectionName).deleteOne({ _id: assessmentObjId });
-    await db.collection('marks').deleteMany({ itemId: id });
+    await db.collection('marks').deleteMany({ itemId: { $in: [id, assessmentObjId] } });
 
     return res.json({ success: true, message: 'Assessment and associated marks deleted successfully.' });
   } catch (err) {

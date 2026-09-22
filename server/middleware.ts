@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Request, Response, NextFunction } from 'express';
 import { ObjectId } from 'mongodb';
 import { getDatabase, isDatabaseConnected, getDbConnectionError } from './db.ts';
@@ -25,7 +26,7 @@ export function requireDb(req: Request, res: Response, next: NextFunction) {
   next();
 }
 
-// 2. CSRF Protection Middleware
+// 2. Hardened CSRF Protection Middleware
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
   const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
   if (!mutatingMethods.includes(req.method)) {
@@ -33,15 +34,33 @@ export function csrfProtection(req: Request, res: Response, next: NextFunction) 
   }
 
   // Exempt public auth endpoints from CSRF check (login/register establish the session)
+  const normalizedPath = req.baseUrl ? `${req.baseUrl}${req.path}` : req.path;
   const exemptPaths = ['/auth/login', '/auth/register', '/auth/register-admin', '/auth/csrf'];
-  if (exemptPaths.some(p => req.path === p)) {
+  const isExempt = exemptPaths.some(p => req.path.endsWith(p) || normalizedPath.endsWith(p));
+  if (isExempt) {
     return next();
   }
 
-  const clientCsrfToken = req.headers['x-csrf-token'] as string;
+  const clientCsrfToken = req.headers['x-csrf-token'];
   const cookieCsrfToken = req.cookies[CSRF_COOKIE_NAME];
 
-  if (!clientCsrfToken || !cookieCsrfToken || clientCsrfToken !== cookieCsrfToken) {
+  if (
+    !clientCsrfToken ||
+    !cookieCsrfToken ||
+    typeof clientCsrfToken !== 'string' ||
+    typeof cookieCsrfToken !== 'string'
+  ) {
+    return res.status(403).json({
+      success: false,
+      error: 'INVALID_CSRF_TOKEN',
+      message: 'Invalid or missing CSRF token. Please refresh the page.',
+    });
+  }
+
+  const bufClient = Buffer.from(clientCsrfToken);
+  const bufCookie = Buffer.from(cookieCsrfToken);
+
+  if (bufClient.length !== bufCookie.length || !crypto.timingSafeEqual(bufClient, bufCookie)) {
     return res.status(403).json({
       success: false,
       error: 'INVALID_CSRF_TOKEN',
@@ -117,9 +136,14 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       }
     }
 
-    const expiryTime = user.expiresAt ? new Date(user.expiresAt).getTime() : Date.now() + 3 * 86400000;
-    const isExpired = user.role === 'teacher' && expiryTime < Date.now();
-    const daysRemaining = user.role === 'teacher' ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const isTeacher = user.role === 'teacher';
+    // If expiryMode === false, user has lifetime access and is NEVER expired
+    const hasExpiryMode = isTeacher && user.expiryMode !== false;
+    const expiryTime = (hasExpiryMode && user.expiresAt) ? new Date(user.expiresAt).getTime() : null;
+    const isExpired = Boolean(hasExpiryMode && expiryTime !== null && expiryTime < Date.now());
+    const daysRemaining = (hasExpiryMode && expiryTime !== null)
+      ? Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
+      : undefined;
 
     req.user = {
       userId: user._id.toString(),
@@ -130,7 +154,7 @@ export async function requireAuth(req: Request, res: Response, next: NextFunctio
       status: user.status || 'active',
       tokenVersion: dbTokenVersion,
       isExpired,
-      expiresAt: user.expiresAt,
+      expiresAt: hasExpiryMode ? user.expiresAt : null,
       daysRemaining,
     };
 
@@ -187,7 +211,7 @@ export async function requireTeacher(req: Request, res: Response, next: NextFunc
   next();
 }
 
-// 5. Require Administrator Role
+// 5. Require Administrator Role (unifies master_admin and administrator)
 export function requireMasterAdmin(req: Request, res: Response, next: NextFunction) {
   if (!req.user || (req.user.role !== 'master_admin' && req.user.role !== 'administrator')) {
     return res.status(403).json({

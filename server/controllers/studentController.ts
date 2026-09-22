@@ -172,6 +172,10 @@ export async function createStudent(req: Request, res: Response) {
       return res.status(404).json({ success: false, message: 'Section not found.' });
     }
 
+    if (sectionDoc.teacherId.toString() !== req.user!.userId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    }
+
     // 1. Strict limit verification: Max 1000 students per section
     const currentCount = await db.collection('students').countDocuments({ sectionId });
     if (currentCount >= MAX_STUDENTS_PER_SECTION) {
@@ -201,9 +205,10 @@ export async function createStudent(req: Request, res: Response) {
       });
     }
 
-    // 4. Uniqueness check for Symbol Number in section
+    // 4. Uniqueness check for Symbol Number in section (case-insensitive)
     const cleanSymbol = symbolNumber.trim();
-    const existingSymbol = await db.collection('students').findOne({ sectionId, symbolNumber: cleanSymbol });
+    const symbolRegex = new RegExp(`^${cleanSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const existingSymbol = await db.collection('students').findOne({ sectionId, symbolNumber: { $regex: symbolRegex } });
     if (existingSymbol) {
       return res.status(409).json({
         success: false,
@@ -334,10 +339,11 @@ export async function updateStudent(req: Request, res: Response) {
     }
     if (symbolNumber !== undefined) {
       const cleanSymbol = symbolNumber.trim();
-      if (cleanSymbol !== student.symbolNumber) {
+      if (cleanSymbol.toLowerCase() !== (student.symbolNumber || '').toLowerCase()) {
+        const symbolRegex = new RegExp(`^${cleanSymbol.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
         const conflictSym = await db.collection('students').findOne({
           sectionId: student.sectionId,
-          symbolNumber: cleanSymbol,
+          symbolNumber: { $regex: symbolRegex },
           _id: { $ne: student._id },
         });
         if (conflictSym) {
@@ -398,13 +404,14 @@ export async function deleteStudent(req: Request, res: Response) {
     }
 
     // Delete student, student's marks, and remove student from attendance records
+    const studObjId = new ObjectId(studentId);
     await Promise.all([
-      db.collection('marks').deleteMany({ studentId }),
+      db.collection('marks').deleteMany({ studentId: { $in: [studentId, studObjId] } }),
       db.collection('attendance').updateMany(
         { sectionId: student.sectionId },
-        { $pull: { records: { studentId } } } as any
+        { $pull: { records: { studentId: { $in: [studentId, studObjId] } } } } as any
       ),
-      db.collection('students').deleteOne({ _id: new ObjectId(studentId) }),
+      db.collection('students').deleteOne({ _id: studObjId }),
     ]);
 
     return res.json({ success: true, message: 'Student deleted successfully.' });
@@ -428,7 +435,7 @@ export async function getStudentRecord(req: Request, res: Response) {
       return res.status(404).json({ success: false, message: 'Student not found.' });
     }
 
-    if (student.teacherId !== req.user!.userId) {
+    if (student.teacherId !== req.user!.userId && req.user!.role === 'teacher') {
       return res.status(403).json({ success: false, message: 'You do not have permission to view this student.' });
     }
 

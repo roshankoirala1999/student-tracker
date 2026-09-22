@@ -51,6 +51,9 @@ export async function createClass(req: Request, res: Response) {
     }
 
     const count = await db.collection('classes').countDocuments({ teacherId });
+    if (count >= 100) {
+      return res.status(400).json({ success: false, message: 'Maximum limit of 100 classes reached.' });
+    }
     const order = count + 1;
     const now = new Date().toISOString();
 
@@ -207,14 +210,16 @@ export async function deleteClass(req: Request, res: Response) {
     }
 
     // Cascade delete all sections, students, marks, attendance records, examinations, and assignments belonging to that class
+    const classObjId = new ObjectId(classId);
+    const classIdFilter = { $in: [classId, classObjId] };
     await Promise.all([
-      db.collection('classes').deleteOne({ _id: new ObjectId(classId) }),
-      db.collection('sections').deleteMany({ classId }),
-      db.collection('students').deleteMany({ classId }),
-      db.collection('marks').deleteMany({ classId }),
-      db.collection('attendance').deleteMany({ classId }),
-      db.collection('examinations').deleteMany({ classId }),
-      db.collection('assignments').deleteMany({ classId }),
+      db.collection('classes').deleteOne({ _id: classObjId }),
+      db.collection('sections').deleteMany({ classId: classIdFilter }),
+      db.collection('students').deleteMany({ classId: classIdFilter }),
+      db.collection('marks').deleteMany({ classId: classIdFilter }),
+      db.collection('attendance').deleteMany({ classId: classIdFilter }),
+      db.collection('examinations').deleteMany({ classId: classIdFilter }),
+      db.collection('assignments').deleteMany({ classId: classIdFilter }),
     ]);
 
     return res.json({
@@ -235,12 +240,20 @@ export async function toggleAttendance(req: Request, res: Response) {
     return res.status(400).json({ success: false, message: 'Invalid attendance status parameter.' });
   }
 
+  if (!classId || !ObjectId.isValid(classId)) {
+    return res.status(400).json({ success: false, message: 'Invalid Class ID.' });
+  }
+
   try {
     const db = getDatabase();
-    await db.collection('classes').updateOne(
-      { _id: new ObjectId(classId) },
+    const result = await db.collection('classes').updateOne(
+      { _id: new ObjectId(classId), teacherId: req.user!.userId },
       { $set: { attendanceEnabled: enabled } }
     );
+
+    if (result.matchedCount === 0) {
+      return res.status(404).json({ success: false, message: 'Class not found or unauthorized.' });
+    }
 
     return res.json({
       success: true,
@@ -314,15 +327,20 @@ export async function addSection(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Incorrect password. Cannot add section.' });
     }
 
-    const cleanName = name.trim();
-    const existing = await db.collection('sections').findOne({ classId, name: cleanName });
-    if (existing) {
-      return res.status(409).json({ success: false, message: `A section named "${cleanName}" already exists in this class.` });
-    }
-
     const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
     if (!classDoc) {
       return res.status(404).json({ success: false, message: 'Class not found.' });
+    }
+
+    if (classDoc.teacherId.toString() !== req.user!.userId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this class.' });
+    }
+
+    const cleanName = name.trim();
+    const nameRegex = new RegExp(`^${cleanName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
+    const existing = await db.collection('sections').findOne({ classId, name: { $regex: nameRegex } });
+    if (existing) {
+      return res.status(409).json({ success: false, message: `A section named "${cleanName}" already exists in this class.` });
     }
 
     const totalInClass = await db.collection('sections').countDocuments({ classId });
@@ -398,11 +416,12 @@ export async function deleteSection(req: Request, res: Response) {
     }
 
     // Cascade delete students, marks, attendance belonging to this section
+    const secObjId = new ObjectId(sectionId);
     await Promise.all([
-      db.collection('students').deleteMany({ sectionId }),
-      db.collection('marks').deleteMany({ sectionId }),
-      db.collection('attendance').deleteMany({ sectionId }),
-      db.collection('sections').deleteOne({ _id: new ObjectId(sectionId) }),
+      db.collection('students').deleteMany({ sectionId: { $in: [sectionId, secObjId] } }),
+      db.collection('marks').deleteMany({ sectionId: { $in: [sectionId, secObjId] } }),
+      db.collection('attendance').deleteMany({ sectionId: { $in: [sectionId, secObjId] } }),
+      db.collection('sections').deleteOne({ _id: secObjId }),
     ]);
 
     return res.json({ success: true, message: 'Section and all associated records deleted successfully.' });

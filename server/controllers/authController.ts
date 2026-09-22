@@ -77,7 +77,7 @@ export async function registerTeacher(req: Request, res: Response) {
     const isExpiryModeOn = defaultSettings ? defaultSettings.expiryMode !== false : true;
     const canDelete = defaultSettings ? defaultSettings.canDeleteAccount === true : false;
 
-    // 7-day default access period if expiry mode is on, or null if off
+    // 7-day default access period if expiry mode is on, or null if off (lifetime)
     const trialExpiresAt = isExpiryModeOn
       ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
       : null;
@@ -89,7 +89,6 @@ export async function registerTeacher(req: Request, res: Response) {
       college: '',
       dob: '',
       customFields: {},
-      plainPassword: password,
       passwordHash,
       role: 'teacher' as UserRole,
       status: 'active' as UserStatus,
@@ -127,7 +126,6 @@ export async function registerTeacher(req: Request, res: Response) {
         college: '',
         dob: '',
         customFields: {},
-        plainPassword: password,
         role: 'teacher',
         status: 'active',
         isDeletionLocked: !canDelete,
@@ -190,25 +188,32 @@ export async function login(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Your account has been suspended by the administrator.' });
     }
 
-    // Sync plainPassword and ensure 7-day trial expiry exists for teachers if expiryMode is enabled
-    const updateOps: any = {};
-    if (!user.plainPassword && password) {
-      updateOps.plainPassword = password;
-      user.plainPassword = password;
-    }
     const hasExpiryMode = user.role === 'teacher' && user.expiryMode !== false;
+    const updateOps: any = {};
     if (hasExpiryMode && !user.expiresAt) {
       const defaultTrial = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       updateOps.expiresAt = defaultTrial;
       user.expiresAt = defaultTrial;
     }
-    if (Object.keys(updateOps).length > 0) {
+
+    // Unset legacy plaintext password if present in doc
+    if (user.plainPassword !== undefined || user.adminPasswordRecord !== undefined) {
+      await db.collection('users').updateOne(
+        { _id: user._id },
+        {
+          ...(Object.keys(updateOps).length > 0 ? { $set: updateOps } : {}),
+          $unset: { plainPassword: '', adminPasswordRecord: '' },
+        }
+      );
+    } else if (Object.keys(updateOps).length > 0) {
       await db.collection('users').updateOne({ _id: user._id }, { $set: updateOps });
     }
 
-    const expiryTime = (hasExpiryMode && user.expiresAt) ? new Date(user.expiresAt).getTime() : 0;
-    const isExpired = hasExpiryMode && expiryTime < Date.now();
-    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const expiryTime = (hasExpiryMode && user.expiresAt) ? new Date(user.expiresAt).getTime() : null;
+    const isExpired = Boolean(hasExpiryMode && expiryTime !== null && expiryTime < Date.now());
+    const daysRemaining = (hasExpiryMode && expiryTime !== null)
+      ? Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
+      : undefined;
 
     const userId = user._id.toString();
     const tokenVersion = user.tokenVersion ?? 0;
@@ -236,7 +241,6 @@ export async function login(req: Request, res: Response) {
         college: user.college || '',
         dob: user.dob || '',
         customFields: user.customFields || {},
-        plainPassword: user.plainPassword || password,
         role: user.role,
         status: user.status || 'active',
         isDeletionLocked: !!user.isDeletionLocked,
@@ -303,11 +307,10 @@ export async function changePassword(req: Request, res: Response) {
       {
         $set: {
           passwordHash: newHash,
-          plainPassword: newPassword,
           mustChangePassword: false,
           tokenVersion: newTokenVersion,
         },
-        $unset: { adminPasswordRecord: "" },
+        $unset: { plainPassword: '', adminPasswordRecord: '' },
       }
     );
 
@@ -333,7 +336,6 @@ export async function changePassword(req: Request, res: Response) {
         college: user.college || '',
         dob: user.dob || '',
         customFields: user.customFields || {},
-        plainPassword: newPassword,
         role: user.role,
         status: user.status || 'active',
         isDeletionLocked: !!user.isDeletionLocked,
@@ -384,16 +386,16 @@ export async function getMe(req: Request, res: Response) {
       await db.collection('users').updateOne({ _id: user._id }, { $set: { expiresAt: userExpiresAt } });
     }
 
-    const expiryTime = (hasExpiryMode && userExpiresAt) ? new Date(userExpiresAt).getTime() : 0;
-    const isExpired = hasExpiryMode && expiryTime < Date.now();
-    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const expiryTime = (hasExpiryMode && userExpiresAt) ? new Date(userExpiresAt).getTime() : null;
+    const isExpired = Boolean(hasExpiryMode && expiryTime !== null && expiryTime < Date.now());
+    const daysRemaining = (hasExpiryMode && expiryTime !== null)
+      ? Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
+      : undefined;
 
     // Check compulsory fields for teachers
     let missingFields: string[] = [];
-    let isProfileIncomplete = false;
 
     if (isTeacher) {
-      // Required Institutional Profile Questions
       const requiredQuestions = await db.collection('profile_questions')
         .find({ required: true })
         .sort({ order: 1, createdAt: 1 })
@@ -406,8 +408,6 @@ export async function getMe(req: Request, res: Response) {
           missingFields.push(q.questionLabel || q.questionText || 'Institutional Question');
         }
       }
-
-      isProfileIncomplete = missingFields.length > 0;
     }
 
     const isAdminReadOnly = isTeacher && !!user?.isReadOnly;
@@ -424,7 +424,6 @@ export async function getMe(req: Request, res: Response) {
         college: user?.college || '',
         dob: user?.dob || '',
         customFields: user?.customFields || {},
-        plainPassword: user?.plainPassword || '',
         role: req.user.role,
         status: user ? user.status || 'active' : req.user.status,
         isDeletionLocked: user ? !!user.isDeletionLocked : false,
@@ -459,7 +458,7 @@ export async function updateTeacherProfile(req: Request, res: Response) {
   if (phoneNumber !== undefined || username !== undefined) {
     return res.status(403).json({
       success: false,
-      message: 'Phone Number and Username can only be updated by the master administrator.',
+      message: 'Phone Number and Username can only be updated by the administrator.',
     });
   }
 
@@ -472,7 +471,7 @@ export async function updateTeacherProfile(req: Request, res: Response) {
 
     const updateFields: any = {};
 
-    // Full name, phone number, and username cannot be changed by teacher (Managed by administrator)
+    // Full name cannot be changed by teacher (Managed by administrator)
     if (fullName !== undefined && fullName !== user.fullName) {
       return res.status(403).json({
         success: false,
@@ -518,7 +517,6 @@ export async function updateTeacherProfile(req: Request, res: Response) {
       }
       newPassHash = await hashPassword(cleanNewPass);
       updateFields.passwordHash = newPassHash;
-      updateFields.plainPassword = cleanNewPass;
       updateFields.mustChangePassword = false;
       const nextTokenVer = (user.tokenVersion || 0) + 1;
       updateFields.tokenVersion = nextTokenVer;
@@ -526,16 +524,21 @@ export async function updateTeacherProfile(req: Request, res: Response) {
 
     await db.collection('users').updateOne(
       { _id: user._id },
-      { $set: updateFields }
+      {
+        $set: updateFields,
+        $unset: { plainPassword: '', adminPasswordRecord: '' },
+      }
     );
 
     const updatedUser = await db.collection('users').findOne({ _id: user._id });
 
     // Recompute compulsory completeness
     const hasExpiryMode = updatedUser?.role === 'teacher' && updatedUser?.expiryMode !== false;
-    const expiryTime = (hasExpiryMode && updatedUser?.expiresAt) ? new Date(updatedUser.expiresAt).getTime() : 0;
-    const isExpired = hasExpiryMode && expiryTime < Date.now();
-    const daysRemaining = hasExpiryMode ? Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)) : undefined;
+    const expiryTime = (hasExpiryMode && updatedUser?.expiresAt) ? new Date(updatedUser.expiresAt).getTime() : null;
+    const isExpired = Boolean(hasExpiryMode && expiryTime !== null && expiryTime < Date.now());
+    const daysRemaining = (hasExpiryMode && expiryTime !== null)
+      ? Math.max(0, Math.ceil((expiryTime - Date.now()) / (1000 * 60 * 60 * 24)))
+      : undefined;
 
     let missingFields: string[] = [];
     if (updatedUser?.role === 'teacher') {
@@ -552,7 +555,6 @@ export async function updateTeacherProfile(req: Request, res: Response) {
       }
     }
 
-    const isProfileIncomplete = missingFields.length > 0;
     const isAdminReadOnly = !!updatedUser?.isReadOnly;
     const isReadOnly = isExpired || isAdminReadOnly;
     const readOnlyReason = isExpired ? 'expired' : isAdminReadOnly ? 'admin_locked' : null;
@@ -568,7 +570,6 @@ export async function updateTeacherProfile(req: Request, res: Response) {
         college: updatedUser!.college || '',
         dob: updatedUser!.dob || '',
         customFields: updatedUser!.customFields || {},
-        plainPassword: updatedUser!.plainPassword || '',
         role: updatedUser!.role,
         status: updatedUser!.status || 'active',
         isDeletionLocked: !!updatedUser!.isDeletionLocked,
@@ -785,19 +786,31 @@ export async function registerMasterAdmin(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Administrator account already exists.' });
     }
 
-    // Validate ADMIN_BOOTSTRAP_KEY using crypto.timingSafeEqual
-    const expectedKey = process.env.ADMIN_BOOTSTRAP_KEY || '';
-    const bufProvided = Buffer.from(String(bootstrapKey || ''));
-    const bufExpected = Buffer.from(expectedKey);
+    // Validate ADMIN_BOOTSTRAP_KEY using crypto.timingSafeEqual with empty-key prevention
+    const expectedKey = process.env.ADMIN_BOOTSTRAP_KEY;
+    if (!expectedKey || expectedKey.trim().length === 0) {
+      return res.status(503).json({
+        success: false,
+        message: 'ADMIN_BOOTSTRAP_KEY is not configured on the server. Please define it in your environment.',
+      });
+    }
+
+    if (!bootstrapKey || typeof bootstrapKey !== 'string' || bootstrapKey.trim().length === 0) {
+      return res.status(403).json({ success: false, message: 'Invalid administrative bootstrap key.' });
+    }
+
+    const bufProvided = Buffer.from(bootstrapKey.trim());
+    const bufExpected = Buffer.from(expectedKey.trim());
+
     if (bufProvided.length !== bufExpected.length || !crypto.timingSafeEqual(bufProvided, bufExpected)) {
       return res.status(403).json({ success: false, message: 'Invalid administrative bootstrap key.' });
     }
 
-    if (!username || username.trim().length < 3) {
+    if (!username || typeof username !== 'string' || username.trim().length < 3) {
       return res.status(400).json({ success: false, message: 'Username must be at least 3 characters.' });
     }
 
-    if (!password || password.length < 10) {
+    if (!password || typeof password !== 'string' || password.length < 10) {
       return res.status(400).json({ success: false, message: 'Admin password must be at least 10 characters.' });
     }
 

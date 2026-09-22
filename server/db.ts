@@ -8,7 +8,8 @@ let db: Db | null = null;
 let connectionError: string | null = null;
 let isConnecting = false;
 
-function sanitizeErrorMessage(msg: string): string {
+export function sanitizeErrorMessage(msg: string): string {
+  if (!msg || typeof msg !== 'string') return '';
   return msg.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)[^@]+(@)/gi, '$1*****$2');
 }
 
@@ -27,7 +28,7 @@ export async function connectToDatabase(): Promise<{ db: Db | null; error: strin
 
   // Validate scheme to catch malformed inputs before calling MongoClient
   if (!uri.startsWith('mongodb://') && !uri.startsWith('mongodb+srv://')) {
-    connectionError = `Invalid scheme in MONGODB_URI: expected connection string to start with "mongodb://" or "mongodb+srv://". Example format: mongodb+srv://<username>:<password>@cluster0.mongodb.net/student_tracker?retryWrites=true&w=majority`;
+    connectionError = 'Invalid scheme in MONGODB_URI: expected connection string to start with "mongodb://" or "mongodb+srv://". Example format: mongodb+srv://<username>:<password>@cluster0.mongodb.net/student_tracker?retryWrites=true&w=majority';
     console.warn('[Database Notice]', connectionError);
     return { db: null, error: connectionError };
   }
@@ -55,9 +56,9 @@ export async function connectToDatabase(): Promise<{ db: Db | null; error: strin
 
     // Startup migration: Unset legacy plaintext adminPasswordRecord
     try {
-      await db.collection('users').updateMany({}, { $unset: { adminPasswordRecord: "" } });
+      await db.collection('users').updateMany({}, { $unset: { adminPasswordRecord: "", plainPassword: "" } });
     } catch (migErr) {
-      console.warn('[Database] Migration notice (adminPasswordRecord unset):', migErr);
+      console.warn('[Database] Migration notice (plaintext password unset):', migErr);
     }
 
     // Create vital indexes
@@ -89,7 +90,7 @@ export function getDbConnectionError(): string | null {
   return connectionError;
 }
 
-async function initializeIndexes(database: Db) {
+export async function initializeIndexes(database: Db): Promise<void> {
   try {
     const usersCol = database.collection('users');
     await usersCol.createIndex({ username: 1 }, { unique: true });
@@ -119,6 +120,12 @@ async function initializeIndexes(database: Db) {
     const attendanceCol = database.collection('attendance');
     await attendanceCol.createIndex({ sectionId: 1, dayNumber: 1 }, { unique: true });
     await attendanceCol.createIndex({ teacherId: 1 });
+
+    const messagesCol = database.collection('messages');
+    await messagesCol.createIndex({ senderId: 1, recipientId: 1, createdAt: -1 });
+
+    const notificationsCol = database.collection('notifications');
+    await notificationsCol.createIndex({ recipientId: 1, createdAt: -1 });
 
     console.log('[Database] Indexes verified successfully');
   } catch (err) {

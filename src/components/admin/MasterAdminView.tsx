@@ -47,7 +47,6 @@ interface TeacherItem {
   college?: string;
   dob?: string;
   customFields?: Record<string, string>;
-  plainPassword?: string;
   role: string;
   status: 'active' | 'suspended';
   isReadOnly?: boolean;
@@ -116,9 +115,6 @@ export const MasterAdminView: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [messagingModalTeacher, setMessagingModalTeacher] = useState<TeacherItem | null>(null);
-
-  // Password visibility map (by teacher id)
-  const [revealedPasswords, setRevealedPasswords] = useState<Record<string, boolean>>({});
 
   // Password edit modal state
   const [passwordModalTeacher, setPasswordModalTeacher] = useState<TeacherItem | null>(null);
@@ -261,13 +257,6 @@ export const MasterAdminView: React.FC = () => {
     } finally {
       setDownloadingTeacherId(null);
     }
-  };
-
-  const togglePasswordVisibility = (teacherId: string) => {
-    setRevealedPasswords((prev) => ({
-      ...prev,
-      [teacherId]: !prev[teacherId],
-    }));
   };
 
   const handleToggleStatus = async (teacher: TeacherItem) => {
@@ -614,9 +603,6 @@ export const MasterAdminView: React.FC = () => {
                 </tr>
               ) : (
                 filtered.map((t) => {
-                  const isRevealed = !!revealedPasswords[t.id];
-                  const displayPass = t.plainPassword || '';
-
                   return (
                     <tr key={t.id} className="hover:bg-slate-50/70 dark:hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4">
@@ -631,16 +617,17 @@ export const MasterAdminView: React.FC = () => {
                       </td>
                       <td className="py-3.5 px-4 font-mono text-xs text-slate-700 dark:text-slate-300">
                         <div className="flex items-center gap-2">
-                          <span className={isRevealed && !displayPass ? 'text-slate-400 italic text-[11px]' : ''}>
-                            {isRevealed ? (displayPass || '(Not stored yet)') : '••••••••'}
-                          </span>
+                          <span className="text-slate-400">••••••••</span>
                           <button
                             type="button"
-                            onClick={() => togglePasswordVisibility(t.id)}
-                            title={isRevealed ? 'Hide Password' : 'Show Password'}
+                            onClick={() => {
+                              setPasswordModalTeacher(t);
+                              setNewPassword('');
+                            }}
+                            title="Reset Teacher Password"
                             className="p-1 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer transition-colors"
                           >
-                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                            <KeyRound className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </td>
