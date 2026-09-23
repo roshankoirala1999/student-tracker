@@ -1,8 +1,22 @@
+import fs from 'fs';
+import path from 'path';
 import dotenv from 'dotenv';
+
+// 1. Fallback .env loader executed before importing downstream application modules
+const envCandidates = [
+  path.resolve(process.cwd(), '.env'),
+  path.resolve(process.cwd(), '../.env'),
+];
+
+for (const envPath of envCandidates) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+    break;
+  }
+}
 dotenv.config();
 
 import express from 'express';
-import path from 'path';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
@@ -10,26 +24,26 @@ import { createServer as createViteServer } from 'vite';
 import { connectToDatabase } from './server/db.ts';
 import apiRouter from './server/apiRouter.ts';
 
-const PORT = 3000;
+const PORT = parseInt(process.env.PORT || '3000', 10);
 
 async function startServer() {
   const app = express();
 
-  // Trust proxy for reverse proxies (e.g. Cloud Run, Nginx)
+  // Trust proxy for Nginx / AWS reverse proxies
   app.set('trust proxy', 1);
 
-  // Basic security and parsing middlewares
+  // Security headers & body parsers
   app.use(
     helmet({
       contentSecurityPolicy: false,
       crossOriginResourcePolicy: { policy: 'cross-origin' },
     })
   );
-  app.use(express.json({ limit: '5mb' }));
-  app.use(express.urlencoded({ extended: true }));
+  app.use(express.json({ limit: '10mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use(cookieParser());
 
-  // General rate limiter for API endpoints
+  // Rate limiter for API endpoints
   const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 1000,
@@ -44,7 +58,7 @@ async function startServer() {
   });
   app.use('/api', apiLimiter);
 
-  // Attempt database connection asynchronously
+  // Non-blocking database connection initialization
   connectToDatabase().catch((err) => {
     console.warn('[Startup DB Connection Notice]:', err?.message || err);
   });
@@ -68,7 +82,7 @@ async function startServer() {
     });
   });
 
-  // Vite middleware for development vs static files for production
+  // Static serving for Production vs Vite Middleware in Development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -76,15 +90,20 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
+    const distPath = path.resolve(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+
+    // Catch-all route for SPA navigation (bypasses /api)
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) {
+        return next();
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[Student Tracker Server] Running on http://0.0.0.0:${PORT}`);
+    console.log(`[Student Tracker Server] Running on http://0.0.0.0:${PORT} in ${process.env.NODE_ENV || 'development'} mode`);
   });
 }
 
