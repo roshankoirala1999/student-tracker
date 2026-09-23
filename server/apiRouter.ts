@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { requireDb, csrfProtection, requireAuth, requireTeacher, requireMasterAdmin, verifyClassOwnership, verifySectionOwnership } from './middleware.ts';
+import {
+  requireDb,
+  csrfProtection,
+  requireAuth,
+  requireTeacher,
+  requireMasterAdmin,
+  verifyClassOwnership,
+  verifySectionOwnership,
+} from './middleware.ts';
 import { isDatabaseConnected } from './db.ts';
-
 import * as authCtrl from './controllers/authController.ts';
 import * as classCtrl from './controllers/classController.ts';
 import * as studentCtrl from './controllers/studentController.ts';
@@ -27,16 +34,7 @@ const authLimiter = rateLimit({
   },
 });
 
-// Enforce JWT_SECRET configuration check
-api.use((req, res, next) => {
-  const secret = process.env.JWT_SECRET || 'student-tracker-secure-fallback-jwt-secret-key-32chars!';
-  if (!secret || secret.length < 32) {
-    return res.status(503).json({ error: 'CONFIG_ERROR', message: 'Server is not configured correctly. Contact the administrator.' });
-  }
-  next();
-});
-
-// 1. Health & Connection Status (public, does not require DB to respond)
+// 1. Health & Connection Status (public, does not require JWT validation)
 api.get('/health', (req, res) => {
   const connected = isDatabaseConnected();
   return res.json({
@@ -47,6 +45,18 @@ api.get('/health', (req, res) => {
   });
 });
 
+// Dynamic configuration guard for all API endpoints
+api.use((req, res, next) => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length < 32) {
+    return res.status(503).json({
+      error: 'CONFIG_ERROR',
+      message: 'Server is not configured correctly. Contact the administrator.',
+    });
+  }
+  next();
+});
+
 // 2. Auth Endpoints
 api.get('/auth/csrf', authCtrl.getCsrfToken);
 api.get('/auth/admin-setup-status', requireDb, authCtrl.getAdminSetupStatus);
@@ -55,20 +65,19 @@ api.post('/auth/register-admin', authLimiter, requireDb, authCtrl.registerMaster
 api.post('/auth/login', authLimiter, requireDb, authCtrl.login);
 
 api.use(csrfProtection);
-
 api.post('/auth/logout', authCtrl.logout);
 api.get('/auth/me', requireDb, requireAuth, authCtrl.getMe);
 api.patch('/auth/profile', requireDb, requireAuth, requireTeacher, authCtrl.updateTeacherProfile);
 api.post('/auth/change-password', authLimiter, requireDb, requireAuth, authCtrl.changePassword);
 api.post('/auth/delete-account', requireDb, requireAuth, authCtrl.deleteAccount);
 
-// Profile Questions (Accessible for all authenticated users to read, Master Admin to manage)
+// Profile Questions
 api.get('/profile-questions', requireDb, requireAuth, authCtrl.listProfileQuestions);
 api.post('/profile-questions', requireDb, requireAuth, requireMasterAdmin, authCtrl.createProfileQuestion);
 api.put('/profile-questions/reorder', requireDb, requireAuth, requireMasterAdmin, authCtrl.reorderProfileQuestions);
 api.delete('/profile-questions/:id', requireDb, requireAuth, requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
-// From here down: All endpoints require active DB connection and authentication
+// From here down: active DB connection and authentication required
 api.use(requireDb);
 api.use(requireAuth);
 
@@ -77,21 +86,19 @@ api.get('/classes', classCtrl.listClasses);
 api.post('/classes', requireTeacher, classCtrl.createClass);
 api.put('/classes/reorder', requireTeacher, classCtrl.reorderClasses);
 api.patch('/classes/:classId/rename', requireTeacher, verifyClassOwnership, classCtrl.renameClass);
-api.delete('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.deleteClass); // Sensitive: requires password
+api.delete('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.deleteClass);
 api.patch('/classes/:classId/attendance', requireTeacher, verifyClassOwnership, classCtrl.toggleAttendance);
 
 // 4. Sections
 api.get('/classes/:classId/sections', verifyClassOwnership, classCtrl.listSections);
-api.post('/classes/:classId/sections', requireTeacher, verifyClassOwnership, classCtrl.addSection); // Sensitive: requires password
-api.delete('/classes/:classId/sections/:sectionId', requireTeacher, verifyClassOwnership, classCtrl.deleteSection); // Sensitive: requires password
+api.post('/classes/:classId/sections', requireTeacher, verifyClassOwnership, classCtrl.addSection);
+api.delete('/classes/:classId/sections/:sectionId', requireTeacher, verifyClassOwnership, classCtrl.deleteSection);
 
-// 5. Assessments (Class-scoped)
+// 5. Assessments
 api.get('/classes/:classId/examinations', verifyClassOwnership, assessCtrl.listExaminations);
 api.post('/classes/:classId/examinations', requireTeacher, verifyClassOwnership, assessCtrl.createExamination);
-
 api.get('/classes/:classId/assignments', verifyClassOwnership, assessCtrl.listAssignments);
 api.post('/classes/:classId/assignments', requireTeacher, verifyClassOwnership, assessCtrl.createAssignment);
-
 api.patch('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.updateAssessment);
 api.delete('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.deleteAssessment);
 
@@ -100,10 +107,10 @@ api.get('/classes/:classId/students', verifyClassOwnership, studentCtrl.listClas
 api.get('/sections/:sectionId/students', verifySectionOwnership, studentCtrl.listStudents);
 api.post('/sections/:sectionId/students', requireTeacher, verifySectionOwnership, studentCtrl.createStudent);
 api.put('/students/:studentId', requireTeacher, studentCtrl.updateStudent);
-api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent); // Sensitive: requires password
+api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent);
 api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
 
-// 6b. Students CSV & Roster (Student Info)
+// 6b. Students CSV & Roster
 api.get('/sections/:sectionId/students/csv-template', verifySectionOwnership, marksCtrl.exportStudentRosterCsv);
 api.post('/sections/:sectionId/students/csv-import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterCsv);
 api.get('/sections/:sectionId/students/excel/export', verifySectionOwnership, marksCtrl.exportStudentRosterExcel);
@@ -152,7 +159,7 @@ api.get('/admin/settings/developer-contact', requireMasterAdmin, adminCtrl.getDe
 api.put('/admin/developer-contact', requireMasterAdmin, adminCtrl.updateDeveloperContact);
 api.put('/admin/settings/developer-contact', requireMasterAdmin, adminCtrl.updateDeveloperContact);
 
-// Notifications (Admin -> Teacher)
+// Notifications
 api.get('/notifications', adminCtrl.getTeacherNotifications);
 api.patch('/notifications/read', adminCtrl.markNotificationsRead);
 api.get('/admin/teachers/:teacherId/notifications', requireMasterAdmin, adminCtrl.getAdminTeacherNotifications);
@@ -165,7 +172,7 @@ api.post('/admin/profile-questions', requireMasterAdmin, authCtrl.createProfileQ
 api.put('/admin/profile-questions/reorder', requireMasterAdmin, authCtrl.reorderProfileQuestions);
 api.delete('/admin/profile-questions/:id', requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
-// 2-Way Messaging System (Teacher <-> Admin, Teacher <-> Teacher)
+// 2-Way Messaging System
 api.get('/messages/conversations', requireAuth, messageCtrl.getConversations);
 api.get('/messages/search-teachers', requireAuth, messageCtrl.searchTeachers);
 api.get('/messages/thread/:targetId', requireAuth, messageCtrl.getThread);
