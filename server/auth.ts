@@ -20,9 +20,6 @@ export interface JwtPayload {
   daysRemaining?: number;
 }
 
-/**
- * Dynamically evaluate JWT_SECRET on every call (requires min 32 chars).
- */
 export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
   if (!secret || secret.trim().length < 32) {
@@ -76,9 +73,6 @@ export function generateCsrfToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-/**
- * Helper to check if the incoming request is HTTPS (direct or proxied by Nginx)
- */
 export function isSecureRequest(req?: Request): boolean {
   if (!req) return false;
   return Boolean(
@@ -95,7 +89,7 @@ export function setAuthCookies(res: Response, req: Request, token: string, csrfT
     httpOnly: true,
     secure: isSecure,
     sameSite: 'lax',
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+    maxAge: 7 * 24 * 60 * 60 * 1000,
     path: '/',
   });
 
