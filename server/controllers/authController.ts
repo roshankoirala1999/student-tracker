@@ -2,7 +2,15 @@ import crypto from 'crypto';
 import { Request, Response } from 'express';
 import { ObjectId } from 'mongodb';
 import { getDatabase } from '../db.ts';
-import { hashPassword, comparePassword, signToken, generateCsrfToken, setAuthCookies, clearAuthCookies } from '../auth.ts';
+import {
+  hashPassword,
+  comparePassword,
+  signToken,
+  generateCsrfToken,
+  setAuthCookies,
+  clearAuthCookies,
+  isSecureRequest,
+} from '../auth.ts';
 import { UserRole, UserStatus } from '../../src/types/index.ts';
 
 export async function cascadeDeleteTeacherData(db: any, teacherId: string) {
@@ -114,7 +122,7 @@ export async function registerTeacher(req: Request, res: Response) {
     });
 
     const csrfToken = generateCsrfToken();
-    setAuthCookies(res, token, csrfToken);
+    setAuthCookies(res, req, token, csrfToken);
 
     return res.status(201).json({
       success: true,
@@ -229,7 +237,7 @@ export async function login(req: Request, res: Response) {
     });
 
     const csrfToken = generateCsrfToken();
-    setAuthCookies(res, token, csrfToken);
+    setAuthCookies(res, req, token, csrfToken);
 
     return res.status(200).json({
       success: true,
@@ -323,7 +331,7 @@ export async function changePassword(req: Request, res: Response) {
     });
 
     const csrfToken = generateCsrfToken();
-    setAuthCookies(res, newToken, csrfToken);
+    setAuthCookies(res, req, newToken, csrfToken);
 
     return res.json({
       success: true,
@@ -352,7 +360,7 @@ export async function changePassword(req: Request, res: Response) {
 }
 
 export async function logout(req: Request, res: Response) {
-  clearAuthCookies(res);
+  clearAuthCookies(res, req);
   return res.status(200).json({ success: true, message: 'Logged out successfully.' });
 }
 
@@ -371,7 +379,7 @@ export async function getMe(req: Request, res: Response) {
       csrfToken = generateCsrfToken();
       res.cookie('csrf_token', csrfToken, {
         httpOnly: false,
-        secure: process.env.NODE_ENV === 'production',
+        secure: isSecureRequest(req),
         sameSite: 'lax',
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/',
@@ -732,7 +740,7 @@ export async function deleteAccount(req: Request, res: Response) {
 
     const teacherId = req.user.userId;
     await cascadeDeleteTeacherData(db, teacherId);
-    clearAuthCookies(res);
+    clearAuthCookies(res, req);
 
     return res.json({
       success: true,
@@ -750,7 +758,7 @@ export async function getCsrfToken(req: Request, res: Response) {
     csrfToken = generateCsrfToken();
     res.cookie('csrf_token', csrfToken, {
       httpOnly: false,
-      secure: process.env.NODE_ENV === 'production',
+      secure: isSecureRequest(req),
       sameSite: 'lax',
       maxAge: 7 * 24 * 60 * 60 * 1000,
       path: '/',
