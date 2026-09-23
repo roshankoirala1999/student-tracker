@@ -312,6 +312,29 @@ export const AuthPage: React.FC = () => {
               >
                 {loading ? 'Authenticating...' : 'Sign In as Teacher'}
               </button>
+
+              <div className="pt-2 flex items-center justify-between text-xs">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUsername('teacher1');
+                    setPassword('TeacherPassword123!');
+                  }}
+                  className="text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 font-medium underline cursor-pointer"
+                >
+                  Fill Demo Teacher
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTab('admin-login');
+                    resetForm();
+                  }}
+                  className="text-[#2B547E] dark:text-blue-400 hover:underline font-semibold cursor-pointer"
+                >
+                  Admin Portal &rarr;
+                </button>
+              </div>
             </form>
           )}
 
@@ -466,6 +489,19 @@ export const AuthPage: React.FC = () => {
                 >
                   {loading ? 'Authenticating...' : 'Sign In as Administrator'}
                 </button>
+
+                <div className="text-center pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setUsername('admin');
+                      setPassword('AdminPassword123!');
+                    }}
+                    className="text-slate-500 dark:text-slate-400 hover:text-[#2B547E] dark:hover:text-blue-400 font-medium underline cursor-pointer text-xs"
+                  >
+                    Fill Demo Admin
+                  </button>
+                </div>
               </form>
 
               <div className="pt-2 text-center">
