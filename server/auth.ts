@@ -4,31 +4,8 @@ import crypto from 'crypto';
 import { Response, Request, NextFunction } from 'express';
 import { UserRole, UserStatus } from '../src/types/index.ts';
 
-export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET || 'student-tracker-secure-fallback-jwt-secret-key-32chars!';
-  return secret.trim();
-}
-
-// Initial startup validation check
-export function validateJwtSecret(): void {
-  getJwtSecret();
-}
-
-// Middleware to ensure every API call returns HTTP 503 {error:'CONFIG_ERROR'} when JWT_SECRET is invalid
-export function checkJwtConfig(req: Request, res: Response, next: NextFunction) {
-  try {
-    getJwtSecret();
-    next();
-  } catch (err: any) {
-    return res.status(503).json({
-      error: 'CONFIG_ERROR',
-      message: 'Server is not configured correctly. JWT_SECRET is missing or invalid.',
-    });
-  }
-}
-
-const TOKEN_COOKIE_NAME = 'auth_token';
-const CSRF_COOKIE_NAME = 'csrf_token';
+export const TOKEN_COOKIE_NAME = 'auth_token';
+export const CSRF_COOKIE_NAME = 'csrf_token';
 
 export interface JwtPayload {
   userId: string;
@@ -41,6 +18,33 @@ export interface JwtPayload {
   expiresAt?: string | null;
   isExpired?: boolean;
   daysRemaining?: number;
+}
+
+/**
+ * Dynamically evaluate JWT_SECRET on every call (requires min 32 chars).
+ */
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.trim().length < 32) {
+    throw new Error('JWT_SECRET must be defined and at least 32 characters long.');
+  }
+  return secret.trim();
+}
+
+export function validateJwtSecret(): void {
+  getJwtSecret();
+}
+
+export function checkJwtConfig(req: Request, res: Response, next: NextFunction) {
+  try {
+    getJwtSecret();
+    next();
+  } catch (err: any) {
+    return res.status(503).json({
+      error: 'CONFIG_ERROR',
+      message: 'Server is not configured correctly. JWT_SECRET is missing or invalid.',
+    });
+  }
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -72,10 +76,21 @@ export function generateCsrfToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
-export function setAuthCookies(res: Response, token: string, csrfToken: string) {
-  const isSecure = process.env.NODE_ENV === 'production' || Boolean(process.env.NETLIFY);
+/**
+ * Helper to check if the incoming request is HTTPS (direct or proxied by Nginx)
+ */
+export function isSecureRequest(req?: Request): boolean {
+  if (!req) return false;
+  return Boolean(
+    req.secure ||
+    req.headers['x-forwarded-proto'] === 'https' ||
+    req.headers['x-forwarded-protocol'] === 'https'
+  );
+}
 
-  // Secure, httpOnly cookie for the authentication JWT
+export function setAuthCookies(res: Response, req: Request, token: string, csrfToken: string) {
+  const isSecure = isSecureRequest(req);
+
   res.cookie(TOKEN_COOKIE_NAME, token, {
     httpOnly: true,
     secure: isSecure,
@@ -84,7 +99,6 @@ export function setAuthCookies(res: Response, token: string, csrfToken: string) 
     path: '/',
   });
 
-  // Non-httpOnly cookie for CSRF token that client reads and sends via x-csrf-token header on mutations
   res.cookie(CSRF_COOKIE_NAME, csrfToken, {
     httpOnly: false,
     secure: isSecure,
@@ -94,8 +108,8 @@ export function setAuthCookies(res: Response, token: string, csrfToken: string) 
   });
 }
 
-export function clearAuthCookies(res: Response) {
-  const isSecure = process.env.NODE_ENV === 'production' || Boolean(process.env.NETLIFY);
+export function clearAuthCookies(res: Response, req?: Request) {
+  const isSecure = isSecureRequest(req);
 
   res.clearCookie(TOKEN_COOKIE_NAME, {
     httpOnly: true,
@@ -111,5 +125,3 @@ export function clearAuthCookies(res: Response) {
     path: '/',
   });
 }
-
-export { TOKEN_COOKIE_NAME, CSRF_COOKIE_NAME };
