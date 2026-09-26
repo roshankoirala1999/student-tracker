@@ -798,3 +798,61 @@ export const exportSampleExcel = exportMarksCsv;
 export const importMarksExcel = importMarksCsv;
 export const exportStudentRosterExcel = exportStudentRosterCsv;
 export const importStudentRosterExcel = importStudentRosterCsv;
+
+export async function getMarksByAssessment(req: Request, res: Response) {
+  const { assessmentId } = req.params;
+  try {
+    const db = getDatabase();
+    const marks = await db.collection('marks').find({ itemId: assessmentId }).toArray();
+    return res.json({
+      success: true,
+      data: marks.map((m) => ({
+        id: m._id.toString(),
+        studentId: m.studentId,
+        itemId: m.itemId,
+        assessmentId: m.itemId,
+        itemType: m.itemType,
+        marksObtained: m.marksObtained,
+        updatedAt: m.updatedAt,
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch marks.' });
+  }
+}
+
+export async function saveMarksBatch(req: Request, res: Response) {
+  const { marks } = req.body;
+  if (!Array.isArray(marks)) {
+    return res.status(400).json({ success: false, message: 'marks array is required.' });
+  }
+  try {
+    const db = getDatabase();
+    const now = new Date().toISOString();
+    for (const m of marks) {
+      const assessmentId = m.itemId || m.assessmentId;
+      if (m.studentId && assessmentId) {
+        await db.collection('marks').updateOne(
+          { studentId: m.studentId, itemId: assessmentId },
+          {
+            $set: {
+              teacherId: req.user!.userId,
+              studentId: m.studentId,
+              itemId: assessmentId,
+              itemType: m.itemType || 'examination',
+              marksObtained: m.marksObtained !== undefined ? Number(m.marksObtained) : null,
+              sectionId: m.sectionId,
+              classId: m.classId,
+              updatedAt: now,
+            },
+          },
+          { upsert: true }
+        );
+      }
+    }
+    return res.json({ success: true, message: 'Marks updated successfully.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to save marks.' });
+  }
+}
+

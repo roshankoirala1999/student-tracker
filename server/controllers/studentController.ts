@@ -502,3 +502,74 @@ export async function getStudentRecord(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 }
+
+export async function listAllStudents(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const query: any = {};
+    if (req.user?.role === 'teacher') {
+      query.teacherId = req.user.userId;
+    }
+    const students = await db.collection('students').find(query).toArray();
+    return res.json({
+      success: true,
+      data: students.map((s) => ({
+        id: s._id.toString(),
+        teacherId: s.teacherId,
+        classId: s.classId,
+        sectionId: s.sectionId,
+        studentName: s.studentName || s.name,
+        rollNumber: s.rollNumber,
+        symbolNumber: s.symbolNumber,
+        contactNumber: s.contactNumber || s.parentContact || '',
+        parentContact: s.parentContact || s.contactNumber || '',
+        createdAt: s.createdAt,
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve students.' });
+  }
+}
+
+export async function createStudentDirect(req: Request, res: Response) {
+  const { studentName, name, rollNumber, symbolNumber, contactNumber, parentContact, sectionId } = req.body;
+  const sName = studentName || name;
+  if (!sName || !sectionId) {
+    return res.status(400).json({ success: false, message: 'Student name and sectionId are required.' });
+  }
+  try {
+    const db = getDatabase();
+    if (!ObjectId.isValid(sectionId)) {
+      return res.status(400).json({ success: false, message: 'Invalid section ID.' });
+    }
+    const sec = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!sec) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const now = new Date().toISOString();
+    const cleanPhone = contactNumber || parentContact || '';
+    const result = await db.collection('students').insertOne({
+      teacherId: req.user!.userId,
+      classId: sec.classId,
+      sectionId,
+      studentName: String(sName).trim(),
+      rollNumber: Number(rollNumber) || 1,
+      symbolNumber: String(symbolNumber || '').trim(),
+      contactNumber: String(cleanPhone).trim(),
+      parentContact: String(cleanPhone).trim(),
+      createdAt: now,
+    });
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: result.insertedId.toString(),
+        studentName: sName,
+        rollNumber,
+        sectionId,
+        classId: sec.classId,
+      },
+      message: 'Student created successfully.',
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to create student.' });
+  }
+}
+

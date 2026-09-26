@@ -152,11 +152,19 @@ export async function getConversations(req: Request, res: Response) {
 
       const userLookup = new Map<string, any>(usersData.map((u) => [u._id.toString(), u]));
       conversationMap.forEach((conv) => {
+        if (conv.participantId === 'admin') return;
         const found = userLookup.get(conv.participantId);
         if (found) {
           conv.participantUsername = found.username || conv.participantUsername;
           conv.participantFullName = found.fullName || conv.participantFullName;
           conv.participantPhoneNumber = found.phoneNumber || '';
+        } else {
+          // Account was deleted: append (deleted) to name and username if not already present
+          const curFull = conv.participantFullName || conv.participantUsername || 'Teacher';
+          conv.participantFullName = curFull.includes('(deleted)') ? curFull : `${curFull} (deleted)`;
+          conv.participantUsername = conv.participantUsername.includes('(deleted)') ? conv.participantUsername : `${conv.participantUsername} (deleted)`;
+          conv.participantPhoneNumber = '';
+          (conv as any).isDeleted = true;
         }
       });
     }
@@ -275,6 +283,7 @@ export async function getThread(req: Request, res: Response) {
       fullName: string;
       role: string;
       phoneNumber?: string;
+      isDeleted?: boolean;
     };
 
     if (isAdmin) {
@@ -282,18 +291,35 @@ export async function getThread(req: Request, res: Response) {
       if (!ObjectId.isValid(targetId)) {
         return res.status(400).json({ success: false, message: 'Invalid teacher ID.' });
       }
-      const teacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
-      if (!teacher) {
-        return res.status(404).json({ success: false, message: 'Teacher not found.' });
-      }
       conversationId = `admin:${targetId}`;
-      participant = {
-        id: teacher._id.toString(),
-        username: teacher.username,
-        fullName: teacher.fullName || '',
-        role: teacher.role,
-        phoneNumber: teacher.phoneNumber || '',
-      };
+      const teacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
+
+      if (teacher) {
+        participant = {
+          id: teacher._id.toString(),
+          username: teacher.username,
+          fullName: teacher.fullName || '',
+          role: teacher.role,
+          phoneNumber: teacher.phoneNumber || '',
+          isDeleted: false,
+        };
+      } else {
+        // Teacher account was deleted: find recorded name from conversation history
+        const prevMsg = await db.collection('messages').findOne({ conversationId });
+        const oldName = prevMsg?.senderId === targetId
+          ? (prevMsg.senderFullName || prevMsg.senderUsername)
+          : (prevMsg?.recipientFullName || prevMsg?.recipientUsername || 'Teacher');
+        const oldUser = prevMsg?.senderId === targetId ? prevMsg.senderUsername : (prevMsg?.recipientUsername || 'teacher');
+
+        participant = {
+          id: targetId,
+          username: oldUser.includes('(deleted)') ? oldUser : `${oldUser} (deleted)`,
+          fullName: oldName.includes('(deleted)') ? oldName : `${oldName} (deleted)`,
+          role: 'teacher',
+          phoneNumber: '',
+          isDeleted: true,
+        };
+      }
 
       // Mark incoming messages as read by admin
       await db.collection('messages').updateMany(
@@ -313,6 +339,7 @@ export async function getThread(req: Request, res: Response) {
           username: 'admin',
           fullName: 'Admin',
           role: 'master_admin',
+          isDeleted: false,
         };
 
         // Mark incoming messages as read by this teacher
@@ -332,18 +359,35 @@ export async function getThread(req: Request, res: Response) {
         if (targetId === user.userId) {
           return res.status(400).json({ success: false, message: 'Cannot open chat with yourself.' });
         }
-        const otherTeacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
-        if (!otherTeacher) {
-          return res.status(404).json({ success: false, message: 'Teacher not found.' });
-        }
         conversationId = `teacher:${[user.userId, targetId].sort().join(':')}`;
-        participant = {
-          id: otherTeacher._id.toString(),
-          username: otherTeacher.username,
-          fullName: otherTeacher.fullName || '',
-          role: otherTeacher.role,
-          phoneNumber: otherTeacher.phoneNumber || '',
-        };
+        const otherTeacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
+
+        if (otherTeacher) {
+          participant = {
+            id: otherTeacher._id.toString(),
+            username: otherTeacher.username,
+            fullName: otherTeacher.fullName || '',
+            role: otherTeacher.role,
+            phoneNumber: otherTeacher.phoneNumber || '',
+            isDeleted: false,
+          };
+        } else {
+          // Other teacher was deleted: retrieve last known name from previous messages
+          const prevMsg = await db.collection('messages').findOne({ conversationId });
+          const oldName = prevMsg?.senderId === targetId
+            ? (prevMsg.senderFullName || prevMsg.senderUsername)
+            : (prevMsg?.recipientFullName || prevMsg?.recipientUsername || 'Teacher');
+          const oldUser = prevMsg?.senderId === targetId ? prevMsg.senderUsername : (prevMsg?.recipientUsername || 'teacher');
+
+          participant = {
+            id: targetId,
+            username: oldUser.includes('(deleted)') ? oldUser : `${oldUser} (deleted)`,
+            fullName: oldName.includes('(deleted)') ? oldName : `${oldName} (deleted)`,
+            role: 'teacher',
+            phoneNumber: '',
+            isDeleted: true,
+          };
+        }
 
         // Mark incoming messages from other teacher as read
         await db.collection('messages').updateMany(
@@ -451,7 +495,7 @@ export async function sendMessage(req: Request, res: Response) {
       }
       const teacher = await db.collection('users').findOne({ _id: new ObjectId(recipientId) });
       if (!teacher) {
-        return res.status(404).json({ success: false, message: 'Teacher not found.' });
+        return res.status(400).json({ success: false, message: 'Cannot send message because this teacher account has been deleted.' });
       }
       recipientUsername = teacher.username;
       recipientFullName = teacher.fullName || '';
@@ -485,7 +529,7 @@ export async function sendMessage(req: Request, res: Response) {
         }
         const otherTeacher = await db.collection('users').findOne({ _id: new ObjectId(recipientId) });
         if (!otherTeacher) {
-          return res.status(404).json({ success: false, message: 'Teacher not found.' });
+          return res.status(400).json({ success: false, message: 'Cannot send message because this teacher account has been deleted.' });
         }
         if (otherTeacher.status === 'suspended') {
           return res.status(403).json({ success: false, message: 'Cannot message a suspended teacher account.' });
@@ -622,3 +666,146 @@ export async function markThreadRead(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Failed to mark thread as read.' });
   }
 }
+
+export async function getInbox(req: Request, res: Response) {
+  return getConversations(req, res);
+}
+
+export async function broadcastMessage(req: Request, res: Response) {
+  const { subject, content, message } = req.body;
+  const text = content || message;
+  if (!text) {
+    return res.status(400).json({ success: false, message: 'Message content is required.' });
+  }
+  try {
+    const db = getDatabase();
+    const teachers = await db.collection('users').find({ role: 'teacher' }).toArray();
+    const now = new Date().toISOString();
+    const docs = teachers.map((t) => ({
+      conversationId: `admin:${t._id.toString()}`,
+      senderId: req.user?.userId || 'admin',
+      senderUsername: req.user?.username || 'admin',
+      senderFullName: 'Administrator',
+      senderRole: req.user?.role || 'master_admin',
+      recipientId: t._id.toString(),
+      recipientUsername: t.username,
+      recipientFullName: t.fullName || '',
+      recipientRole: 'teacher',
+      subject: subject || 'Announcement',
+      message: text.trim(),
+      read: false,
+      isBroadcast: true,
+      createdAt: now,
+    }));
+    if (docs.length > 0) {
+      await db.collection('messages').insertMany(docs);
+    }
+    return res.json({ success: true, message: `Broadcast sent to ${docs.length} teachers.` });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to broadcast message.' });
+  }
+}
+
+export async function markSingleRead(req: Request, res: Response) {
+  const { id } = req.params;
+  try {
+    const db = getDatabase();
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid message ID.' });
+    }
+    await db.collection('messages').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { read: true, readAt: new Date().toISOString() } }
+    );
+    return res.json({ success: true, message: 'Message marked as read.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to mark message read.' });
+  }
+}
+
+/**
+ * Delete a single message for everyone
+ */
+export async function deleteMessage(req: Request, res: Response) {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+    const { messageId } = req.params;
+    if (!messageId || !ObjectId.isValid(messageId)) {
+      return res.status(400).json({ success: false, message: 'Invalid message ID.' });
+    }
+
+    const db = getDatabase();
+    const msg = await db.collection('messages').findOne({ _id: new ObjectId(messageId) });
+    if (!msg) {
+      return res.status(404).json({ success: false, message: 'Message not found or already deleted.' });
+    }
+
+    const isAdmin = isAdminRole(user.role);
+    const isSender = msg.senderId === user.userId || (isAdmin && isAdminRole(msg.senderRole));
+    const isRecipient = msg.recipientId === user.userId || (isAdmin && isAdminRole(msg.recipientRole));
+
+    if (!isAdmin && !isSender && !isRecipient) {
+      return res.status(403).json({ success: false, message: 'Permission denied. You can only delete messages in your own conversations.' });
+    }
+
+    // Delete message for everyone from the database
+    await db.collection('messages').deleteOne({ _id: new ObjectId(messageId) });
+
+    return res.json({
+      success: true,
+      message: 'Message deleted for everyone.',
+      deletedMessageId: messageId,
+      conversationId: msg.conversationId,
+    });
+  } catch (err: any) {
+    console.error('Error deleting message:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete message.' });
+  }
+}
+
+/**
+ * Delete an entire chat / conversation for everyone
+ */
+export async function deleteChat(req: Request, res: Response) {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: 'Authentication required.' });
+    }
+    const { targetId } = req.params;
+    if (!targetId) {
+      return res.status(400).json({ success: false, message: 'Target participant ID is required.' });
+    }
+
+    const db = getDatabase();
+    const isAdmin = isAdminRole(user.role);
+
+    let conversationId: string;
+    if (isAdmin) {
+      conversationId = `admin:${targetId}`;
+    } else {
+      if (targetId === 'admin') {
+        conversationId = `admin:${user.userId}`;
+      } else {
+        conversationId = `teacher:${[user.userId, targetId].sort().join(':')}`;
+      }
+    }
+
+    const result = await db.collection('messages').deleteMany({ conversationId });
+
+    return res.json({
+      success: true,
+      message: 'Chat and all messages deleted successfully.',
+      deletedCount: result.deletedCount,
+      conversationId,
+    });
+  } catch (err: any) {
+    console.error('Error deleting chat:', err);
+    return res.status(500).json({ success: false, message: 'Failed to delete chat.' });
+  }
+}
+
+

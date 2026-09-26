@@ -141,7 +141,12 @@ export async function deleteTeacher(req: Request, res: Response) {
       return res.status(403).json({ success: false, message: 'Unlock this account first.' });
     }
 
-    // Cascade delete all data
+    const teacherName = teacher.fullName || teacher.username || 'Teacher';
+    const username = teacher.username || 'teacher';
+    const cleanName = teacherName.includes('(deleted)') ? teacherName : `${teacherName} (deleted)`;
+    const cleanUsername = username.includes('(deleted)') ? username : `${username} (deleted)`;
+
+    // Cascade delete academic data, but preserve messages and mark teacher as (deleted)
     await Promise.all([
       db.collection('classes').deleteMany({ teacherId }),
       db.collection('sections').deleteMany({ teacherId }),
@@ -151,6 +156,26 @@ export async function deleteTeacher(req: Request, res: Response) {
       db.collection('examinations').deleteMany({ teacherId }),
       db.collection('assignments').deleteMany({ teacherId }),
       db.collection('users').deleteOne({ _id: new ObjectId(teacherId) }),
+      db.collection('messages').updateMany(
+        { senderId: teacherId },
+        {
+          $set: {
+            senderFullName: cleanName,
+            senderUsername: cleanUsername,
+            senderIsDeleted: true,
+          },
+        }
+      ),
+      db.collection('messages').updateMany(
+        { recipientId: teacherId },
+        {
+          $set: {
+            recipientFullName: cleanName,
+            recipientUsername: cleanUsername,
+            recipientIsDeleted: true,
+          },
+        }
+      ),
     ]);
 
     return res.json({
@@ -1044,3 +1069,71 @@ export async function exportTeacherData(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Failed to export teacher data.' });
   }
 }
+
+export async function getAdminStats(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const teachersCount = await db.collection('users').countDocuments({ role: 'teacher' });
+    const classesCount = await db.collection('classes').countDocuments();
+    const studentsCount = await db.collection('students').countDocuments();
+    const attendanceRecordsCount = await db.collection('attendance').countDocuments();
+    return res.json({
+      success: true,
+      data: {
+        teachersCount,
+        classesCount,
+        studentsCount,
+        attendanceRecordsCount,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to retrieve admin stats.' });
+  }
+}
+
+export async function createTeacherByAdmin(req: Request, res: Response) {
+  const { fullName, phoneNumber, username, password, college, dob } = req.body;
+  if (!fullName || !username || !password) {
+    return res.status(400).json({ success: false, message: 'Full name, username, and password are required.' });
+  }
+  try {
+    const db = getDatabase();
+    const cleanUsername = String(username).trim().toLowerCase();
+    const existing = await db.collection('users').findOne({ username: cleanUsername });
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Username is already taken.' });
+    }
+    const passwordHash = await hashPassword(password);
+    const now = new Date().toISOString();
+    const result = await db.collection('users').insertOne({
+      username: cleanUsername,
+      fullName: String(fullName).trim(),
+      phoneNumber: String(phoneNumber || '').trim(),
+      college: String(college || '').trim(),
+      dob: String(dob || '').trim(),
+      customFields: {},
+      passwordHash,
+      role: 'teacher',
+      status: 'active',
+      isDeletionLocked: false,
+      mustChangePassword: true,
+      tokenVersion: 0,
+      expiryMode: false,
+      createdAt: now,
+    });
+    return res.status(201).json({
+      success: true,
+      message: 'Teacher account created successfully.',
+      data: {
+        id: result.insertedId.toString(),
+        username: cleanUsername,
+        fullName,
+      },
+    });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ success: false, message: 'Failed to create teacher account.' });
+  }
+}
+

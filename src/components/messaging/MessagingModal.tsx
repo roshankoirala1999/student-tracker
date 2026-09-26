@@ -11,6 +11,7 @@ import {
   AlertCircle,
   RefreshCw,
   CheckCircle2,
+  Trash2,
 } from 'lucide-react';
 import { apiRequest } from '../../api/client.ts';
 import { ConversationItem, ChatMessage, TeacherSearchItem, UserProfile } from '../../types/index.ts';
@@ -47,9 +48,16 @@ export const MessagingModal: React.FC<Props> = ({
     fullName: string;
     role: string;
     phoneNumber?: string;
+    isDeleted?: boolean;
   } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
+
+  // Delete message / chat states
+  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
+  const [deletingMessage, setDeletingMessage] = useState(false);
+  const [confirmDeleteChat, setConfirmDeleteChat] = useState<string | null>(null);
+  const [deletingChat, setDeletingChat] = useState(false);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -264,6 +272,57 @@ export const MessagingModal: React.FC<Props> = ({
     }
   };
 
+  // Delete single message for everyone
+  const handleDeleteMessage = async (messageId: string) => {
+    setDeletingMessage(true);
+    setSendError(null);
+    try {
+      const res = await apiRequest(`/api/messages/${messageId}`, { method: 'DELETE' });
+      if (res.success) {
+        setMessages((prev) => prev.filter((m) => m.id !== messageId));
+        fetchConversations();
+        setMessageToDelete(null);
+      } else {
+        setSendError(res.message || 'Failed to delete message.');
+      }
+    } catch (err: any) {
+      setSendError(err.message || 'Failed to delete message.');
+    } finally {
+      setDeletingMessage(false);
+    }
+  };
+
+  // Delete entire chat / conversation for everyone
+  const handleDeleteChat = async (targetId: string) => {
+    setDeletingChat(true);
+    setSendError(null);
+    try {
+      const res = await apiRequest(`/api/messages/thread/${targetId}`, { method: 'DELETE' });
+      if (res.success) {
+        if (selectedParticipantId === targetId) {
+          setMessages([]);
+          setSelectedParticipantId(null);
+          setActiveParticipant(null);
+        }
+        fetchConversations();
+        setConfirmDeleteChat(null);
+      } else {
+        setSendError(res.message || 'Failed to delete chat.');
+      }
+    } catch (err: any) {
+      setSendError(err.message || 'Failed to delete chat.');
+    } finally {
+      setDeletingChat(false);
+    }
+  };
+
+  // Helper to format names with (deleted) in bracket
+  const formatParticipantName = (name?: string, isDeleted?: boolean) => {
+    if (!name) return 'User';
+    const stripped = name.replace(/\s*\(deleted\)/gi, '').trim();
+    return isDeleted || name.toLowerCase().includes('(deleted)') ? `${stripped} (deleted)` : stripped;
+  };
+
   // On open: fetch conversations or initialize target
   useEffect(() => {
     if (isOpen) {
@@ -439,74 +498,103 @@ export const MessagingModal: React.FC<Props> = ({
                     conv.participantId === 'admin' ||
                     conv.participantRole === 'administrator' ||
                     conv.participantRole === 'master_admin';
+                  const isConvDeleted = Boolean(
+                    conv.isDeleted ||
+                    conv.participantFullName?.toLowerCase().includes('(deleted)') ||
+                    conv.participantUsername?.toLowerCase().includes('(deleted)')
+                  );
                   const isSelected = selectedParticipantId === conv.participantId;
+                  const displayName = isConvAdmin
+                    ? 'Admin'
+                    : formatParticipantName(conv.participantFullName || conv.participantUsername, isConvDeleted);
 
                   return (
-                    <button
+                    <div
                       key={conv.conversationId || conv.participantId}
-                      type="button"
-                      onClick={() => handleSelectParticipant(conv.participantId)}
-                      className={`w-full text-left p-2.5 rounded-xl border transition-all cursor-pointer flex items-start gap-2.5 ${
+                      className={`group w-full p-2.5 rounded-xl border transition-all flex items-start gap-2.5 relative ${
                         isSelected
                           ? 'bg-blue-50 dark:bg-blue-950/40 border-[#2B547E] dark:border-blue-500'
                           : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
                       }`}
                     >
-                      {/* Avatar with only slight difference for Admin */}
-                      <div
-                        className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                          isConvAdmin
-                            ? 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-800 dark:text-slate-200'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                        }`}
+                      <button
+                        type="button"
+                        onClick={() => handleSelectParticipant(conv.participantId)}
+                        className="flex-1 flex items-start gap-2.5 text-left min-w-0 cursor-pointer"
                       >
-                        <User className="w-4 h-4" />
-                      </div>
-
-                      {/* Info & Last message */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-1 mb-0.5">
-                          {isConvAdmin ? (
-                            <div className="flex items-center gap-1.5 truncate">
-                              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                                Admin
-                              </span>
-                              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
-                                Admin
-                              </span>
-                            </div>
-                          ) : (
-                            <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                              {conv.participantFullName || conv.participantUsername}
-                            </span>
-                          )}
-
-                          <span className="text-[10px] text-slate-400 shrink-0">
-                            {new Date(conv.lastMessageAt).toLocaleDateString([], {
-                              month: 'numeric',
-                              day: 'numeric',
-                            })}
-                          </span>
+                        {/* Avatar with slight difference for Admin or Deleted */}
+                        <div
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                            isConvAdmin
+                              ? 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-800 dark:text-slate-200'
+                              : isConvDeleted
+                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
+                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          <User className="w-4 h-4" />
                         </div>
 
-                        {!isConvAdmin && (
-                          <div className="text-[10px] text-slate-400 truncate mb-0.5">
-                            @{conv.participantUsername}
+                        {/* Info & Last message */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-1 mb-0.5">
+                            {isConvAdmin ? (
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
+                                  Admin
+                                </span>
+                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
+                                  Admin
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 truncate">
+                                <span className={`text-xs font-semibold truncate ${isConvDeleted ? 'text-slate-600 dark:text-slate-300' : 'text-slate-900 dark:text-slate-100'}`}>
+                                  {displayName}
+                                </span>
+                              </div>
+                            )}
+
+                            <span className="text-[10px] text-slate-400 shrink-0">
+                              {new Date(conv.lastMessageAt).toLocaleDateString([], {
+                                month: 'numeric',
+                                day: 'numeric',
+                              })}
+                            </span>
                           </div>
+
+                          {!isConvAdmin && (
+                            <div className="text-[10px] text-slate-400 truncate mb-0.5">
+                              @{formatParticipantName(conv.participantUsername, isConvDeleted)}
+                            </div>
+                          )}
+
+                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-normal">
+                            {conv.lastMessage}
+                          </p>
+                        </div>
+                      </button>
+
+                      {/* Unread badge & Delete Chat action */}
+                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                        {conv.unreadCount > 0 && (
+                          <span className="min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center px-1 shrink-0">
+                            {conv.unreadCount}
+                          </span>
                         )}
-
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-normal">
-                          {conv.lastMessage}
-                        </p>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConfirmDeleteChat(conv.participantId);
+                          }}
+                          title="Delete Chat"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-700 rounded-md transition-all cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
-
-                      {/* Unread badge */}
-                      {conv.unreadCount > 0 && (
-                        <span className="min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center px-1 shrink-0">
-                          {conv.unreadCount}
-                        </span>
-                      )}
-                    </button>
+                    </div>
                   );
                 })
               )}
@@ -539,6 +627,10 @@ export const MessagingModal: React.FC<Props> = ({
                           activeParticipant?.role === 'administrator' ||
                           activeParticipant?.id === 'admin'
                             ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                            : activeParticipant?.isDeleted ||
+                              activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
+                              activeParticipant?.username?.toLowerCase().includes('(deleted)')
+                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
                             : 'bg-blue-100 dark:bg-blue-950 text-[#2B547E] dark:text-blue-400'
                         }`}
                       >
@@ -558,13 +650,23 @@ export const MessagingModal: React.FC<Props> = ({
                             </span>
                           </div>
                         ) : (
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              {activeParticipant?.fullName || activeParticipant?.username}
+                              {formatParticipantName(
+                                activeParticipant?.fullName || activeParticipant?.username,
+                                activeParticipant?.isDeleted
+                              )}
                             </span>
                             <span className="text-xs font-medium text-slate-400">
-                              @{activeParticipant?.username}
+                              @{formatParticipantName(activeParticipant?.username, activeParticipant?.isDeleted)}
                             </span>
+                            {(activeParticipant?.isDeleted ||
+                              activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
+                              activeParticipant?.username?.toLowerCase().includes('(deleted)')) && (
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60">
+                                (deleted)
+                              </span>
+                            )}
                           </div>
                         )}
 
@@ -581,7 +683,7 @@ export const MessagingModal: React.FC<Props> = ({
                     </div>
                   </div>
 
-                  {/* Refresh Button for Messages */}
+                  {/* Header Actions: Refresh & Delete Chat */}
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
@@ -591,7 +693,17 @@ export const MessagingModal: React.FC<Props> = ({
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${loadingThread ? 'animate-spin' : ''}`} />
-                      <span>Refresh</span>
+                      <span className="hidden sm:inline">Refresh</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => selectedParticipantId && setConfirmDeleteChat(selectedParticipantId)}
+                      title="Delete entire chat"
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors border border-rose-200 dark:border-rose-900/60 shadow-2xs cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Delete Chat</span>
                     </button>
                   </div>
                 </div>
@@ -625,48 +737,74 @@ export const MessagingModal: React.FC<Props> = ({
                       return (
                         <div
                           key={msg.id}
-                          className={`flex flex-col ${
+                          className={`group relative flex flex-col ${
                             msg.isMine ? 'items-end' : 'items-start'
                           }`}
                         >
-                          <div
-                            className={`max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-2xs ${
-                              msg.isMine
-                                ? 'bg-[#2B547E] text-white rounded-br-xs'
-                                : 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-xs'
-                            }`}
-                          >
-                            {/* Sender title if not mine */}
-                            {!msg.isMine && (
-                              <div className="mb-1 text-[10px] font-semibold">
-                                {isFromAdmin ? (
-                                  <span className="text-slate-800 dark:text-slate-200 flex items-center gap-1 font-bold">
-                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                    <span>Admin</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-600 dark:text-slate-300">
-                                    {msg.senderFullName || `@${msg.senderUsername}`}
-                                  </span>
-                                )}
-                              </div>
+                          <div className="flex items-center gap-1.5 max-w-full">
+                            {/* Delete Message Button for Sender or Admin */}
+                            {msg.isMine && (
+                              <button
+                                type="button"
+                                onClick={() => setMessageToDelete(msg.id)}
+                                title="Delete for everyone"
+                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
                             )}
 
-                            <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>
-
                             <div
-                              className={`mt-1.5 flex items-center justify-end gap-1 text-[9px] ${
+                              className={`max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-2xs relative ${
                                 msg.isMine
-                                  ? 'text-blue-100/70'
-                                  : 'text-slate-400'
+                                  ? 'bg-[#2B547E] text-white rounded-br-xs'
+                                  : 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-xs'
                               }`}
                             >
-                              <Clock className="w-2.5 h-2.5" />
-                              <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                              {msg.isMine && msg.read && (
-                                <CheckCircle2 className="w-2.5 h-2.5 text-blue-200" />
+                              {/* Sender title if not mine */}
+                              {!msg.isMine && (
+                                <div className="mb-1 text-[10px] font-semibold">
+                                  {isFromAdmin ? (
+                                    <span className="text-slate-800 dark:text-slate-200 flex items-center gap-1 font-bold">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
+                                      <span>Admin</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-600 dark:text-slate-300">
+                                      {msg.senderFullName || `@${msg.senderUsername}`}
+                                    </span>
+                                  )}
+                                </div>
                               )}
+
+                              <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+
+                              <div
+                                className={`mt-1.5 flex items-center justify-end gap-1 text-[9px] ${
+                                  msg.isMine
+                                    ? 'text-blue-100/70'
+                                    : 'text-slate-400'
+                                }`}
+                              >
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                {msg.isMine && msg.read && (
+                                  <CheckCircle2 className="w-2.5 h-2.5 text-blue-200" />
+                                )}
+                              </div>
                             </div>
+
+                            {/* Delete Message Button for Non-sender (recipient or admin) */}
+                            {!msg.isMine && (
+                              <button
+                                type="button"
+                                onClick={() => setMessageToDelete(msg.id)}
+                                title="Delete for everyone"
+                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer shrink-0"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       );
@@ -683,70 +821,83 @@ export const MessagingModal: React.FC<Props> = ({
                   </div>
                 )}
 
-                {/* Message Input Box with 300-char limit counter & Refresh button */}
-                <form
-                  onSubmit={handleSendMessage}
-                  className="p-3 bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 shrink-0"
-                >
-                  <div className="flex items-end gap-2">
-                    <div className="flex-1 relative">
-                      <textarea
-                        rows={2}
-                        maxLength={300}
-                        value={inputMessage}
-                        onChange={(e) => {
-                          setInputMessage(e.target.value);
-                          setSendError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !e.shiftKey) {
-                            e.preventDefault();
-                            handleSendMessage();
-                          }
-                        }}
-                        placeholder="Type a message (Enter to send, max 300 chars)..."
-                        className="w-full p-2.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 resize-none"
-                      />
-
-                      {/* Character limit counter: max 300 characters */}
-                      <div className="absolute right-2.5 bottom-2 text-[10px] text-slate-400 pointer-events-none">
-                        <span
-                          className={
-                            inputMessage.length >= 290
-                              ? 'text-rose-500 font-bold'
-                              : 'text-slate-400'
-                          }
-                        >
-                          {inputMessage.length}
-                        </span>
-                        /300
-                      </div>
+                {/* Message Input Box OR Deleted Account Notification */}
+                {activeParticipant?.isDeleted ||
+                activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
+                activeParticipant?.username?.toLowerCase().includes('(deleted)') ? (
+                  <div className="p-4 bg-rose-50/80 dark:bg-rose-950/40 border-t border-rose-200 dark:border-rose-900/60 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
+                      <span>
+                        This account has been deleted. You can view previous messages, but cannot send new messages to this account.
+                      </span>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
-                      disabled={loadingThread}
-                      title="Refresh messages"
-                      className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
-                    >
-                      <RefreshCw className={`w-4 h-4 ${loadingThread ? 'animate-spin' : ''}`} />
-                    </button>
-
-                    <button
-                      type="submit"
-                      disabled={!inputMessage.trim() || sending}
-                      className="p-3 rounded-xl bg-[#2B547E] hover:bg-[#355C7D] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer shrink-0"
-                      title="Send message"
-                    >
-                      {sending ? (
-                        <RefreshCw className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Send className="w-4 h-4" />
-                      )}
-                    </button>
                   </div>
-                </form>
+                ) : (
+                  <form
+                    onSubmit={handleSendMessage}
+                    className="p-3 bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 shrink-0"
+                  >
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 relative">
+                        <textarea
+                          rows={2}
+                          maxLength={300}
+                          value={inputMessage}
+                          onChange={(e) => {
+                            setInputMessage(e.target.value);
+                            setSendError(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              handleSendMessage();
+                            }
+                          }}
+                          placeholder="Type a message (Enter to send, max 300 chars)..."
+                          className="w-full p-2.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 resize-none"
+                        />
+
+                        {/* Character limit counter: max 300 characters */}
+                        <div className="absolute right-2.5 bottom-2 text-[10px] text-slate-400 pointer-events-none">
+                          <span
+                            className={
+                              inputMessage.length >= 290
+                                ? 'text-rose-500 font-bold'
+                                : 'text-slate-400'
+                            }
+                          >
+                            {inputMessage.length}
+                          </span>
+                          /300
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
+                        disabled={loadingThread}
+                        title="Refresh messages"
+                        className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
+                      >
+                        <RefreshCw className={`w-4 h-4 ${loadingThread ? 'animate-spin' : ''}`} />
+                      </button>
+
+                      <button
+                        type="submit"
+                        disabled={!inputMessage.trim() || sending}
+                        className="p-3 rounded-xl bg-[#2B547E] hover:bg-[#355C7D] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer shrink-0"
+                        title="Send message"
+                      >
+                        {sending ? (
+                          <RefreshCw className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Send className="w-4 h-4" />
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                )}
               </>
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3">
@@ -776,6 +927,84 @@ export const MessagingModal: React.FC<Props> = ({
           </div>
         </div>
       </div>
+
+      {/* Confirmation Modal: Delete Message for Everyone */}
+      {messageToDelete && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Message?</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Delete for everyone</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Are you sure you want to delete this message for everyone? This message will be permanently removed for all participants.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deletingMessage}
+                onClick={() => setMessageToDelete(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingMessage}
+                onClick={() => messageToDelete && handleDeleteMessage(messageToDelete)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                {deletingMessage && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Delete for Everyone</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal: Delete Entire Chat */}
+      {confirmDeleteChat && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
+          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Entire Chat?</h4>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Clear all messages</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Are you sure you want to delete this entire chat? All messages in this conversation will be permanently removed for everyone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                disabled={deletingChat}
+                onClick={() => setConfirmDeleteChat(null)}
+                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deletingChat}
+                onClick={() => confirmDeleteChat && handleDeleteChat(confirmDeleteChat)}
+                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
+              >
+                {deletingChat && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
+                <span>Delete Chat</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

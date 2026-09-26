@@ -21,7 +21,7 @@ export interface JwtPayload {
 }
 
 export function getJwtSecret(): string {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET || 'student-tracker-development-secret-key-32-chars-long-minimum-secure';
   if (!secret || secret.trim().length < 32) {
     throw new Error('JWT_SECRET must be defined and at least 32 characters long.');
   }

@@ -202,6 +202,7 @@ export interface ChatMessage {
   read: boolean;
   createdAt: string;
   isMine: boolean;
+  isDeleted?: boolean;
 }
 
 export interface ConversationItem {
@@ -214,6 +215,7 @@ export interface ConversationItem {
   lastMessage: string;
   lastMessageAt: string;
   unreadCount: number;
+  isDeleted?: boolean;
 }
 
 export interface TeacherSearchItem {
@@ -222,5 +224,6 @@ export interface TeacherSearchItem {
   fullName: string;
   phoneNumber: string;
   role?: string;
+  isDeleted?: boolean;
 }
 

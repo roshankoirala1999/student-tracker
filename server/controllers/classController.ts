@@ -430,3 +430,29 @@ export async function deleteSection(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 }
+
+export async function getClassById(req: Request, res: Response) {
+  const { classId } = req.params;
+  try {
+    const db = getDatabase();
+    if (!ObjectId.isValid(classId)) {
+      return res.status(400).json({ success: false, message: 'Invalid class ID.' });
+    }
+    const cls = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
+    if (!cls) return res.status(404).json({ success: false, message: 'Class not found.' });
+    return res.json({
+      success: true,
+      data: {
+        id: cls._id.toString(),
+        teacherId: cls.teacherId,
+        name: cls.name,
+        order: cls.order ?? 0,
+        attendanceEnabled: !!cls.attendanceEnabled,
+        createdAt: cls.createdAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve class.' });
+  }
+}
+

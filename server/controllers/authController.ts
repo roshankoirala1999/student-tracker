@@ -15,6 +15,12 @@ import { UserRole, UserStatus } from '../../src/types/index.ts';
 
 export async function cascadeDeleteTeacherData(db: any, teacherId: string) {
   const teacherObjId = ObjectId.isValid(teacherId) ? new ObjectId(teacherId) : teacherId;
+  const teacher = await db.collection('users').findOne({ _id: teacherObjId });
+  const teacherName = teacher?.fullName || teacher?.username || 'Teacher';
+  const username = teacher?.username || 'teacher';
+  const cleanName = teacherName.includes('(deleted)') ? teacherName : `${teacherName} (deleted)`;
+  const cleanUsername = username.includes('(deleted)') ? username : `${username} (deleted)`;
+
   await Promise.all([
     db.collection('classes').deleteMany({ teacherId }),
     db.collection('sections').deleteMany({ teacherId }),
@@ -24,6 +30,27 @@ export async function cascadeDeleteTeacherData(db: any, teacherId: string) {
     db.collection('examinations').deleteMany({ teacherId }),
     db.collection('assignments').deleteMany({ teacherId }),
     db.collection('users').deleteOne({ _id: teacherObjId }),
+    // Preserve messages for the other party, but update names with (deleted)
+    db.collection('messages').updateMany(
+      { senderId: teacherId },
+      {
+        $set: {
+          senderFullName: cleanName,
+          senderUsername: cleanUsername,
+          senderIsDeleted: true,
+        },
+      }
+    ),
+    db.collection('messages').updateMany(
+      { recipientId: teacherId },
+      {
+        $set: {
+          recipientFullName: cleanName,
+          recipientUsername: cleanUsername,
+          recipientIsDeleted: true,
+        },
+      }
+    ),
   ]);
 }
 

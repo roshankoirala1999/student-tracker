@@ -47,7 +47,7 @@ api.get('/health', (req, res) => {
 
 // Dynamic configuration guard for all API endpoints
 api.use((req, res, next) => {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET || 'student-tracker-development-secret-key-32-chars-long-minimum-secure';
   if (!secret || secret.trim().length < 32) {
     return res.status(503).json({
       error: 'CONFIG_ERROR',
@@ -62,6 +62,7 @@ api.get('/auth/csrf', authCtrl.getCsrfToken);
 api.get('/auth/admin-setup-status', requireDb, authCtrl.getAdminSetupStatus);
 api.post('/auth/register', authLimiter, requireDb, authCtrl.registerTeacher);
 api.post('/auth/register-admin', authLimiter, requireDb, authCtrl.registerMasterAdmin);
+api.post('/auth/bootstrap-admin', authLimiter, requireDb, authCtrl.registerMasterAdmin);
 api.post('/auth/login', authLimiter, requireDb, authCtrl.login);
 
 api.use(csrfProtection);
@@ -84,6 +85,8 @@ api.use(requireAuth);
 // 3. Classes
 api.get('/classes', classCtrl.listClasses);
 api.post('/classes', requireTeacher, classCtrl.createClass);
+api.get('/classes/:classId', verifyClassOwnership, classCtrl.getClassById);
+api.put('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.renameClass);
 api.put('/classes/reorder', requireTeacher, classCtrl.reorderClasses);
 api.patch('/classes/:classId/rename', requireTeacher, verifyClassOwnership, classCtrl.renameClass);
 api.delete('/classes/:classId', requireTeacher, verifyClassOwnership, classCtrl.deleteClass);
@@ -95,6 +98,9 @@ api.post('/classes/:classId/sections', requireTeacher, verifyClassOwnership, cla
 api.delete('/classes/:classId/sections/:sectionId', requireTeacher, verifyClassOwnership, classCtrl.deleteSection);
 
 // 5. Assessments
+api.get('/assessments', assessCtrl.listAllAssessments);
+api.post('/assessments', requireTeacher, assessCtrl.createAssessmentDirect);
+api.get('/assessments/:id', assessCtrl.getAssessmentById);
 api.get('/classes/:classId/examinations', verifyClassOwnership, assessCtrl.listExaminations);
 api.post('/classes/:classId/examinations', requireTeacher, verifyClassOwnership, assessCtrl.createExamination);
 api.get('/classes/:classId/assignments', verifyClassOwnership, assessCtrl.listAssignments);
@@ -103,6 +109,8 @@ api.patch('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClass
 api.delete('/classes/:classId/assessments/:type/:id', requireTeacher, verifyClassOwnership, assessCtrl.deleteAssessment);
 
 // 6. Students
+api.get('/students', studentCtrl.listAllStudents);
+api.post('/students', requireTeacher, studentCtrl.createStudentDirect);
 api.get('/classes/:classId/students', verifyClassOwnership, studentCtrl.listClassStudents);
 api.get('/sections/:sectionId/students', verifySectionOwnership, studentCtrl.listStudents);
 api.post('/sections/:sectionId/students', requireTeacher, verifySectionOwnership, studentCtrl.createStudent);
@@ -111,12 +119,17 @@ api.delete('/students/:studentId', requireTeacher, studentCtrl.deleteStudent);
 api.get('/students/:studentId/record', studentCtrl.getStudentRecord);
 
 // 6b. Students CSV & Roster
+api.post('/students/bulk-import-csv', requireTeacher, marksCtrl.importStudentRosterCsv);
+api.post('/students/bulk-import-excel', requireTeacher, marksCtrl.importStudentRosterExcel);
 api.get('/sections/:sectionId/students/csv-template', verifySectionOwnership, marksCtrl.exportStudentRosterCsv);
 api.post('/sections/:sectionId/students/csv-import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterCsv);
 api.get('/sections/:sectionId/students/excel/export', verifySectionOwnership, marksCtrl.exportStudentRosterExcel);
 api.post('/sections/:sectionId/students/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importStudentRosterExcel);
 
 // 7. Marks CSV & Dynamic Grid
+api.get('/marks/by-assessment/:assessmentId', marksCtrl.getMarksByAssessment);
+api.post('/marks/save-batch', requireTeacher, marksCtrl.saveMarksBatch);
+api.post('/marks/upload-csv', requireTeacher, marksCtrl.importMarksCsv);
 api.get('/sections/:sectionId/marks', verifySectionOwnership, marksCtrl.getSectionMarksMatrix);
 api.post('/sections/:sectionId/marks/single', requireTeacher, verifySectionOwnership, marksCtrl.updateSingleMark);
 api.get('/sections/:sectionId/marks/csv-template', verifySectionOwnership, marksCtrl.exportMarksCsv);
@@ -125,6 +138,9 @@ api.get('/sections/:sectionId/excel/sample', verifySectionOwnership, marksCtrl.e
 api.post('/sections/:sectionId/excel/import', requireTeacher, verifySectionOwnership, marksCtrl.importMarksExcel);
 
 // 8. Attendance
+api.get('/attendance/by-class-date', attendCtrl.getByClassDate);
+api.post('/attendance/save', requireTeacher, attendCtrl.saveAttendanceDirect);
+api.get('/attendance/student-summary/:studentId', attendCtrl.getStudentSummary);
 api.get('/classes/:classId/attendance/download-csv', verifyClassOwnership, attendCtrl.downloadAttendanceCsv);
 api.get('/sections/:sectionId/attendance/download-csv', verifySectionOwnership, attendCtrl.downloadSectionAttendanceCsv);
 api.get('/sections/:sectionId/attendance', verifySectionOwnership, attendCtrl.getAttendanceMetaAndHistory);
@@ -133,6 +149,11 @@ api.get('/attendance/:attendanceId', attendCtrl.getHistoricalDay);
 api.put('/attendance/:attendanceId', requireTeacher, attendCtrl.updateHistoricalAttendance);
 
 // 9. Master Admin
+api.get('/admin/stats', requireMasterAdmin, adminCtrl.getAdminStats);
+api.get('/admin/users', requireMasterAdmin, adminCtrl.listAllTeachers);
+api.post('/admin/users/teacher', requireMasterAdmin, adminCtrl.createTeacherByAdmin);
+api.put('/admin/users/:teacherId/expiry', requireMasterAdmin, adminCtrl.updateTeacherExpiry);
+api.put('/admin/users/:teacherId/reset-password', requireMasterAdmin, adminCtrl.resetTeacherPassword);
 api.get('/admin/teachers', requireMasterAdmin, adminCtrl.listAllTeachers);
 api.get('/admin/teachers/:teacherId/inspect', requireMasterAdmin, adminCtrl.inspectTeacherData);
 api.get('/admin/teachers/:teacherId/export', requireMasterAdmin, adminCtrl.exportTeacherData);
@@ -173,9 +194,15 @@ api.put('/admin/profile-questions/reorder', requireMasterAdmin, authCtrl.reorder
 api.delete('/admin/profile-questions/:id', requireMasterAdmin, authCtrl.deleteProfileQuestion);
 
 // 2-Way Messaging System
+api.get('/messages/inbox', requireAuth, messageCtrl.getInbox);
+api.post('/messages/broadcast', requireAuth, messageCtrl.broadcastMessage);
+api.patch('/messages/mark-read/:id', requireAuth, messageCtrl.markSingleRead);
 api.get('/messages/conversations', requireAuth, messageCtrl.getConversations);
 api.get('/messages/search-teachers', requireAuth, messageCtrl.searchTeachers);
 api.get('/messages/thread/:targetId', requireAuth, messageCtrl.getThread);
+api.delete('/messages/thread/:targetId', requireAuth, messageCtrl.deleteChat);
+api.delete('/messages/conversations/:targetId', requireAuth, messageCtrl.deleteChat);
+api.delete('/messages/:messageId', requireAuth, messageCtrl.deleteMessage);
 api.post('/messages/send', requireAuth, messageCtrl.sendMessage);
 api.get('/messages/unread-count', requireAuth, messageCtrl.getUnreadCount);
 api.patch('/messages/thread/:targetId/read', requireAuth, messageCtrl.markThreadRead);

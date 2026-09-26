@@ -328,3 +328,101 @@ export async function deleteAssessment(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
   }
 }
+
+export async function listAllAssessments(req: Request, res: Response) {
+  try {
+    const db = getDatabase();
+    const query: any = {};
+    if (req.user?.role === 'teacher') query.teacherId = req.user.userId;
+    const [exams, assigns] = await Promise.all([
+      db.collection('examinations').find(query).toArray(),
+      db.collection('assignments').find(query).toArray(),
+    ]);
+    const formatted = [
+      ...exams.map((e) => ({
+        id: e._id.toString(),
+        type: 'examination',
+        name: e.name,
+        classId: e.classId,
+        teacherId: e.teacherId,
+        maxMarks: e.maxMarks,
+        createdAt: e.createdAt,
+      })),
+      ...assigns.map((a) => ({
+        id: a._id.toString(),
+        type: 'assignment',
+        name: a.name,
+        classId: a.classId,
+        teacherId: a.teacherId,
+        maxMarks: a.maxMarks,
+        createdAt: a.createdAt,
+      })),
+    ];
+    return res.json({ success: true, data: formatted });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve assessments.' });
+  }
+}
+
+export async function createAssessmentDirect(req: Request, res: Response) {
+  const { classId, name, title, maxMarks, type } = req.body;
+  const assessName = name || title;
+  const assessType = type === 'assignment' ? 'assignments' : 'examinations';
+  if (!classId || !assessName) {
+    return res.status(400).json({ success: false, message: 'classId and name/title are required.' });
+  }
+  try {
+    const db = getDatabase();
+    const result = await db.collection(assessType).insertOne({
+      classId,
+      teacherId: req.user!.userId,
+      name: String(assessName).trim(),
+      maxMarks: Number(maxMarks) || 100,
+      createdAt: new Date().toISOString(),
+    });
+    return res.status(201).json({
+      success: true,
+      data: {
+        id: result.insertedId.toString(),
+        name: assessName,
+        maxMarks: Number(maxMarks) || 100,
+        type: assessType === 'assignments' ? 'assignment' : 'examination',
+        classId,
+      },
+      message: 'Assessment created successfully.',
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to create assessment.' });
+  }
+}
+
+export async function getAssessmentById(req: Request, res: Response) {
+  const { id } = req.params;
+  try {
+    const db = getDatabase();
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid assessment ID.' });
+    }
+    let assess = await db.collection('examinations').findOne({ _id: new ObjectId(id) });
+    let type = 'examination';
+    if (!assess) {
+      assess = await db.collection('assignments').findOne({ _id: new ObjectId(id) });
+      type = 'assignment';
+    }
+    if (!assess) return res.status(404).json({ success: false, message: 'Assessment not found.' });
+    return res.json({
+      success: true,
+      data: {
+        id: assess._id.toString(),
+        type,
+        name: assess.name,
+        classId: assess.classId,
+        maxMarks: assess.maxMarks,
+        createdAt: assess.createdAt,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve assessment.' });
+  }
+}
+

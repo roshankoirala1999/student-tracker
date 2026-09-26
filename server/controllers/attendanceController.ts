@@ -463,3 +463,84 @@ export async function downloadSectionAttendanceCsv(req: Request, res: Response) 
     return res.status(500).json({ success: false, message: 'Failed to download attendance CSV.' });
   }
 }
+
+export async function getByClassDate(req: Request, res: Response) {
+  const { classId, date } = req.query;
+  try {
+    const db = getDatabase();
+    const query: any = {};
+    if (classId) query.classId = classId;
+    if (date) query.submissionDate = { $regex: new RegExp(`^${date}`) };
+    const records = await db.collection('attendance').find(query).toArray();
+    return res.json({
+      success: true,
+      data: records.map((r) => ({
+        id: r._id.toString(),
+        classId: r.classId,
+        sectionId: r.sectionId,
+        dayNumber: r.dayNumber,
+        submissionDate: r.submissionDate,
+        records: r.records,
+        createdAt: r.createdAt,
+      })),
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch attendance.' });
+  }
+}
+
+export async function saveAttendanceDirect(req: Request, res: Response) {
+  const { sectionId, dayNumber, date, records } = req.body;
+  if (!sectionId || !records) {
+    return res.status(400).json({ success: false, message: 'sectionId and records are required.' });
+  }
+  try {
+    const db = getDatabase();
+    if (!ObjectId.isValid(sectionId)) {
+      return res.status(400).json({ success: false, message: 'Invalid section ID.' });
+    }
+    const sec = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
+    if (!sec) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const now = date || new Date().toISOString();
+    const result = await db.collection('attendance').insertOne({
+      teacherId: req.user!.userId,
+      classId: sec.classId,
+      sectionId,
+      dayNumber: Number(dayNumber) || 1,
+      submissionDate: now,
+      records,
+      createdAt: new Date().toISOString(),
+    });
+    return res.json({ success: true, message: 'Attendance saved.', id: result.insertedId.toString() });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to save attendance.' });
+  }
+}
+
+export async function getStudentSummary(req: Request, res: Response) {
+  const { studentId } = req.params;
+  try {
+    const db = getDatabase();
+    const attendance = await db.collection('attendance').find({ 'records.studentId': studentId }).toArray();
+    let present = 0;
+    let absent = 0;
+    attendance.forEach((att) => {
+      const rec = (att.records || []).find((r: any) => String(r.studentId) === String(studentId));
+      if (rec?.status === 'present') present++;
+      if (rec?.status === 'absent') absent++;
+    });
+    return res.json({
+      success: true,
+      data: {
+        studentId,
+        total: present + absent,
+        present,
+        absent,
+        percentage: present + absent > 0 ? Math.round((present / (present + absent)) * 100) : 0,
+      },
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Failed to retrieve attendance summary.' });
+  }
+}
+
