@@ -1,56 +1,79 @@
-import React, { useState, useEffect } from 'react';
-import { Menu, GraduationCap, Plus, BookOpen, AlertTriangle, Clock } from 'lucide-react';
-import { AuthProvider, useAuth } from './context/AuthContext.tsx';
-import { ThemeProvider } from './context/ThemeContext.tsx';
-import { AuthPage } from './components/auth/AuthPage.tsx';
-import { DatabaseAlert } from './components/common/DatabaseAlert.tsx';
-import { Header } from './components/layout/Header.tsx';
-import { Sidebar } from './components/layout/Sidebar.tsx';
-import { ClassDetailView } from './components/classes/ClassDetailView.tsx';
-import { SectionDetailView } from './components/sections/SectionDetailView.tsx';
-import { MasterAdminView } from './components/admin/MasterAdminView.tsx';
-import { CreateClassModal } from './components/classes/CreateClassModal.tsx';
-import { ForcedPasswordChange } from './components/auth/ForcedPasswordChange.tsx';
-import { HomeView } from './components/home/HomeView.tsx';
-import { ClassItem, SectionItem } from './types/index.ts';
-import { apiRequest } from './api/client.ts';
+import React, { useState, useEffect, lazy, Suspense } from "react";
+import {
+  Menu,
+  GraduationCap,
+  Plus,
+  BookOpen,
+  AlertTriangle,
+  Clock,
+} from "lucide-react";
+import { AuthProvider, useAuth } from "./context/AuthContext.tsx";
+import { ThemeProvider } from "./context/ThemeContext.tsx";
+import { AuthPage } from "./components/auth/AuthPage.tsx";
+import { DatabaseAlert } from "./components/common/DatabaseAlert.tsx";
+import { Header } from "./components/layout/Header.tsx";
+import { Sidebar } from "./components/layout/Sidebar.tsx";
+import { ClassDetailView } from "./components/classes/ClassDetailView.tsx";
+import { SectionDetailView } from "./components/sections/SectionDetailView.tsx";
+const MasterAdminView = lazy(() =>
+  import("./components/admin/MasterAdminView.tsx").then((m) => ({
+    default: m.MasterAdminView,
+  })),
+);
+import { CreateClassModal } from "./components/classes/CreateClassModal.tsx";
+import { ForcedPasswordChange } from "./components/auth/ForcedPasswordChange.tsx";
+import { HomeView } from "./components/home/HomeView.tsx";
+import { ClassItem, SectionItem } from "./types/index.ts";
+import { apiRequest } from "./api/client.ts";
 
 const MainApp: React.FC = () => {
   const { user, loading, dbConnected, dbError, checkAuth } = useAuth();
-  const isAdmin = user?.role === 'master_admin' || user?.role === 'administrator';
+  const isAdmin =
+    user?.role === "master_admin" || user?.role === "administrator";
   const isReadOnly = !isAdmin && (!!user?.isReadOnly || !!user?.isExpired);
-  const isExpired = !isAdmin && !!user?.isExpired;
 
-  const [viewMode, setViewMode] = useState<'app' | 'admin'>('app');
+  const [viewMode, setViewMode] = useState<"app" | "admin">("app");
   const [classes, setClasses] = useState<ClassItem[]>([]);
-  const [sectionsByClass, setSectionsByClass] = useState<Record<string, SectionItem[]>>({});
+  const [sectionsByClass, setSectionsByClass] = useState<
+    Record<string, SectionItem[]>
+  >({});
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
-  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null);
+  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(
+    null,
+  );
   const [isHomeView, setIsHomeView] = useState<boolean>(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
+  const [classesError, setClassesError] = useState<string | null>(null);
   const [classesLoading, setClassesLoading] = useState(false);
   const [createClassModalOpen, setCreateClassModalOpen] = useState(false);
 
   // Load teacher classes
   const loadClasses = async () => {
-    if (!user || user.role === 'master_admin' || user.role === 'administrator') return;
+    if (!user || user.role === "master_admin" || user.role === "administrator")
+      return;
     setClassesLoading(true);
-    const res = await apiRequest<ClassItem[]>('/api/classes');
+    setClassesError(null);
+    const res = await apiRequest<ClassItem[]>("/api/classes");
     setClassesLoading(false);
     if (res.success && res.data) {
       setClasses(res.data);
+      await Promise.all(res.data.map((c) => loadSectionsForClass(c.id)));
       // If current selected class is not in the list, reset to home view
       if (selectedClassId && !res.data.some((c) => c.id === selectedClassId)) {
         setSelectedClassId(null);
         setSelectedSectionId(null);
         setIsHomeView(true);
       }
+    } else {
+      setClassesError(res.message || "Unable to load classes.");
     }
   };
 
   // Load sections for a class
   const loadSectionsForClass = async (classId: string) => {
-    const res = await apiRequest<SectionItem[]>(`/api/classes/${classId}/sections`);
+    const res = await apiRequest<SectionItem[]>(
+      `/api/classes/${classId}/sections`,
+    );
     if (res.success && res.data) {
       setSectionsByClass((prev) => ({
         ...prev,
@@ -61,10 +84,10 @@ const MainApp: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      if (user.role === 'master_admin' || user.role === 'administrator') {
-        setViewMode('admin');
+      if (user.role === "master_admin" || user.role === "administrator") {
+        setViewMode("admin");
       } else {
-        setViewMode('app');
+        setViewMode("app");
         setIsHomeView(true);
         setSelectedClassId(null);
         setSelectedSectionId(null);
@@ -86,7 +109,9 @@ const MainApp: React.FC = () => {
           <div className="w-12 h-12 bg-[#2B547E] rounded-2xl flex items-center justify-center text-white animate-pulse shadow-md">
             <GraduationCap className="w-7 h-7" />
           </div>
-          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">Loading Student Tracker...</p>
+          <p className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+            Loading Student Tracker...
+          </p>
         </div>
       </div>
     );
@@ -108,22 +133,27 @@ const MainApp: React.FC = () => {
   }
 
   const currentClass = classes.find((c) => c.id === selectedClassId) || null;
-  const currentSections = selectedClassId ? sectionsByClass[selectedClassId] || [] : [];
+  const currentSections = selectedClassId
+    ? sectionsByClass[selectedClassId] || []
+    : [];
   const currentSection: SectionItem | null =
-    selectedSectionId === 'combined' && currentClass
+    selectedSectionId === "combined" && currentClass
       ? {
-          id: 'combined',
+          id: "combined",
           teacherId: currentClass.teacherId,
-          name: 'Combined',
+          name: "Combined",
           classId: currentClass.id,
           order: 9999,
-          studentCount: currentSections.reduce((sum, s) => sum + (s.studentCount || 0), 0),
-          createdAt: '',
+          studentCount: currentSections.reduce(
+            (sum, s) => sum + (s.studentCount || 0),
+            0,
+          ),
+          createdAt: "",
         }
       : currentSections.find((s) => s.id === selectedSectionId) || null;
 
   return (
-    <div className="min-h-screen bg-[#F4F6FA] dark:bg-[#090D16] flex flex-col font-sans text-slate-800 dark:text-slate-100 transition-colors duration-200 relative overflow-x-hidden">
+    <div className="app-shell min-h-screen bg-[#F4F6FA] dark:bg-[#090D16] flex flex-col font-sans text-slate-800 dark:text-slate-100 transition-colors duration-200 relative overflow-x-hidden">
       {/* Ambient background micro-glows for luxury UI depth */}
       <div className="fixed top-12 left-1/4 w-96 h-96 bg-blue-500/5 dark:bg-blue-600/10 rounded-full blur-3xl pointer-events-none animate-glow" />
       <div className="fixed bottom-10 right-10 w-96 h-96 bg-indigo-500/5 dark:bg-indigo-600/10 rounded-full blur-3xl pointer-events-none animate-glow delay-2" />
@@ -139,14 +169,26 @@ const MainApp: React.FC = () => {
         }}
       />
 
-      {viewMode === 'admin' ? (
+      {viewMode === "admin" ? (
         <main className="max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 flex-1">
-          <MasterAdminView />
+          <Suspense
+            fallback={
+              <div className="p-8 animate-pulse">Loading administration…</div>
+            }
+          >
+            <MasterAdminView />
+          </Suspense>
         </main>
       ) : (
         <div className="flex-1 flex w-full">
           {/* Sidebar */}
           <Sidebar
+            onGoHome={() => {
+              setIsHomeView(true);
+              setSelectedClassId(null);
+              setSelectedSectionId(null);
+            }}
+            onLoadSections={loadSectionsForClass}
             classes={classes}
             sectionsByClass={sectionsByClass}
             selectedClassId={selectedClassId}
@@ -169,7 +211,7 @@ const MainApp: React.FC = () => {
           />
 
           {/* Main Content Area */}
-          <main className="flex-1 p-4 sm:p-6 lg:p-8 overflow-y-auto max-w-6xl w-full">
+          <main className="app-main flex-1 w-full">
             {/* Mobile Action Bar (< 1024px) */}
             <div className="lg:hidden mb-4 flex items-center justify-between gap-2">
               <button
@@ -186,17 +228,31 @@ const MainApp: React.FC = () => {
                 disabled={isReadOnly}
                 onClick={() => setCreateClassModalOpen(true)}
                 className="flex items-center gap-1.5 px-4 py-2.5 min-h-[42px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
-                title={isReadOnly ? 'Account in Read-Only Mode' : 'New Class'}
+                title={isReadOnly ? "Account in Read-Only Mode" : "New Class"}
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>New Class</span>
               </button>
             </div>
 
+            {classesError && (
+              <div
+                role="alert"
+                className="mb-4 p-4 rounded-xl bg-rose-50 text-rose-700 text-sm"
+              >
+                {classesError}{" "}
+                <button onClick={loadClasses} className="underline ml-2">
+                  Retry
+                </button>
+              </div>
+            )}
             {classesLoading ? (
-              <div className="py-20 text-center text-xs text-slate-400">Loading classes...</div>
+              <div className="py-20 text-center text-xs text-slate-400">
+                Loading classes...
+              </div>
             ) : !isHomeView && currentSection && currentClass ? (
               <SectionDetailView
+                key={currentSection.id}
                 currentClass={currentClass}
                 section={currentSection}
                 onBackToClass={() => setSelectedSectionId(null)}
@@ -208,6 +264,7 @@ const MainApp: React.FC = () => {
               />
             ) : !isHomeView && currentClass ? (
               <ClassDetailView
+                key={currentClass.id}
                 currentClass={currentClass}
                 sections={currentSections}
                 onRefreshClass={loadClasses}
@@ -232,13 +289,14 @@ const MainApp: React.FC = () => {
             ) : (
               <HomeView
                 classes={classes}
+                sectionsByClass={sectionsByClass}
                 onSelectClass={(classId) => {
                   setIsHomeView(false);
                   setSelectedClassId(classId);
                   setSelectedSectionId(null);
                 }}
                 onOpenCreateClass={() => setCreateClassModalOpen(true)}
-                isExpired={isExpired}
+                isExpired={isReadOnly}
               />
             )}
           </main>
@@ -262,7 +320,7 @@ const MainApp: React.FC = () => {
 
 const AppContent: React.FC = () => {
   const { user } = useAuth();
-  return <MainApp key={user?.id ?? 'guest'} />;
+  return <MainApp key={user?.id ?? "guest"} />;
 };
 
 export default function App() {

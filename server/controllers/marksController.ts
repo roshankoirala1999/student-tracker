@@ -1,38 +1,59 @@
-import { Request, Response } from 'express';
-import { ObjectId } from 'mongodb';
-import { getDatabase } from '../db.ts';
-import { parseCsv, generateCsv } from '../utils/csv.ts';
+import ExcelJS from "exceljs";
+import { Request, Response } from "express";
+import { ObjectId } from "mongodb";
+import { getDatabase } from "../db.ts";
+import { parseCsv, generateCsv } from "../utils/csv.ts";
 
 export async function getSectionMarksMatrix(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
     const classId = section.classId;
 
-    const students = await db.collection('students')
+    const students = await db
+      .collection("students")
       .find({ sectionId })
       .sort({ rollNumber: 1 })
       .toArray();
 
-    const assignments = await db.collection('assignments')
+    const assignments = await db
+      .collection("assignments")
       .find({ classId })
       .sort({ createdAt: 1 })
       .toArray();
 
-    const examinations = await db.collection('examinations')
+    const examinations = await db
+      .collection("examinations")
       .find({ classId })
       .sort({ createdAt: 1 })
       .toArray();
 
-    const marks = await db.collection('marks').find({ sectionId }).toArray();
+    const marks = await db.collection("marks").find({ sectionId }).toArray();
 
     // Map: studentId -> { [itemId]: number | null }
     const marksByStudent: Record<string, Record<string, number | null>> = {};
@@ -51,7 +72,7 @@ export async function getSectionMarksMatrix(req: Request, res: Response) {
           rollNumber: s.rollNumber,
           studentName: s.studentName,
           symbolNumber: s.symbolNumber,
-          contactNumber: s.contactNumber || s.parentContact || '',
+          contactNumber: s.contactNumber || s.parentContact || "",
         })),
         assignments: assignments.map((a) => ({
           id: a._id.toString(),
@@ -68,52 +89,110 @@ export async function getSectionMarksMatrix(req: Request, res: Response) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
 export async function updateSingleMark(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
   const { studentId, itemId, itemType, marksObtained } = req.body;
 
   if (!studentId || !itemId || !itemType) {
-    return res.status(400).json({ success: false, message: 'studentId, itemId, and itemType are required.' });
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "studentId, itemId, and itemType are required.",
+      });
   }
 
-  if (itemType !== 'assignment' && itemType !== 'examination') {
-    return res.status(400).json({ success: false, message: 'itemType must be "assignment" or "examination".' });
+  if (itemType !== "assignment" && itemType !== "examination") {
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: 'itemType must be "assignment" or "examination".',
+      });
   }
 
   let numericScore: number | null = null;
-  if (marksObtained !== null && marksObtained !== undefined && marksObtained !== '') {
+  if (
+    marksObtained !== null &&
+    marksObtained !== undefined &&
+    marksObtained !== ""
+  ) {
     numericScore = Number(marksObtained);
     if (isNaN(numericScore) || numericScore < 0) {
-      return res.status(400).json({ success: false, message: 'Marks must be a non-negative number.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Marks must be a non-negative number.",
+        });
     }
   }
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
     if (!ObjectId.isValid(studentId)) {
-      return res.status(400).json({ success: false, message: 'Invalid student ID.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid student ID." });
     }
-    const student = await db.collection('students').findOne({ _id: new ObjectId(studentId), sectionId });
+    const student = await db
+      .collection("students")
+      .findOne({ _id: new ObjectId(studentId), sectionId });
     if (!student) {
-      return res.status(404).json({ success: false, message: 'Student not found in this section.' });
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: "Student not found in this section.",
+        });
     }
 
     // Validate maximum marks
-    const collectionName = itemType === 'examination' ? 'examinations' : 'assignments';
-    const item = await db.collection(collectionName).findOne({ _id: new ObjectId(itemId), classId: section.classId });
+    const collectionName =
+      itemType === "examination" ? "examinations" : "assignments";
+    const item = await db
+      .collection(collectionName)
+      .findOne({ _id: new ObjectId(itemId), classId: section.classId });
     if (!item) {
-      return res.status(404).json({ success: false, message: `${itemType} does not belong to this class.` });
+      return res
+        .status(404)
+        .json({
+          success: false,
+          message: `${itemType} does not belong to this class.`,
+        });
     }
 
     if (numericScore !== null && numericScore > item.maxMarks) {
@@ -125,7 +204,7 @@ export async function updateSingleMark(req: Request, res: Response) {
 
     const now = new Date().toISOString();
 
-    await db.collection('marks').updateOne(
+    await db.collection("marks").updateOne(
       { studentId, itemId },
       {
         $set: {
@@ -139,30 +218,39 @@ export async function updateSingleMark(req: Request, res: Response) {
           updatedAt: now,
         },
       },
-      { upsert: true }
+      { upsert: true },
     );
 
-    return res.json({ success: true, message: 'Mark updated successfully.', score: numericScore });
+    return res.json({
+      success: true,
+      message: "Mark updated successfully.",
+      score: numericScore,
+    });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
 // Helper to decode CSV text from request body (raw csv string or base64 data url)
 function extractCsvText(body: any): string {
-  if (typeof body.csvContent === 'string') {
+  if (typeof body.csvContent === "string") {
     return body.csvContent;
   }
-  if (typeof body.fileData === 'string') {
+  if (typeof body.fileData === "string") {
     const data = body.fileData;
-    if (data.includes('base64,')) {
-      const base64Part = data.split('base64,')[1];
-      return Buffer.from(base64Part, 'base64').toString('utf-8');
+    if (data.includes("base64,")) {
+      const base64Part = data.split("base64,")[1];
+      return Buffer.from(base64Part, "base64").toString("utf-8");
     }
     return data;
   }
-  return '';
+  return "";
 }
 
 /**
@@ -170,51 +258,78 @@ function extractCsvText(body: any): string {
  * Columns: Roll Number, Student Name, Symbol Number, Contact Number
  */
 export async function exportStudentRosterCsv(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(section.classId) });
 
-    const students = await db.collection('students')
+    const students = await db
+      .collection("students")
       .find({ sectionId })
       .sort({ rollNumber: 1 })
       .toArray();
 
-    const headers = ['Roll Number', 'Student Name', 'Symbol Number', 'Contact Number'];
+    const headers = [
+      "Roll Number",
+      "Student Name",
+      "Symbol Number",
+      "Contact Number",
+    ];
     let rows: (string | number)[][] = [];
 
     if (students.length > 0) {
       rows = students.map((s) => [
         s.rollNumber,
-        s.studentName || '',
-        s.symbolNumber || '',
-        s.contactNumber || s.parentContact || '',
+        s.studentName || "",
+        s.symbolNumber || "",
+        s.contactNumber || s.parentContact || "",
       ]);
     } else {
       // Provide clean sample rows if section has no enrolled students yet
       rows = [
-        [1, 'John Doe', 'SYM-1001', '9841000001'],
-        [2, 'Jane Smith', 'SYM-1002', '9841000002'],
+        [1, "John Doe", "SYM-1001", "9841000001"],
+        [2, "Jane Smith", "SYM-1002", "9841000002"],
       ];
     }
 
     const csvContent = generateCsv(headers, rows);
-    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Student_Info_Template.csv`;
+    const filename = `${(classDoc?.name || "Class").replace(/\s+/g, "_")}_${section.name.replace(/\s+/g, "_")}_Student_Info_Template.csv`;
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send('\uFEFF' + csvContent);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send("\uFEFF" + csvContent);
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to export student info CSV.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to export student info CSV." });
   }
 }
 
@@ -224,25 +339,49 @@ export async function exportStudentRosterCsv(req: Request, res: Response) {
  * No marks logic here. Handles roll-number swaps cleanly without corrupting student records.
  */
 export async function importStudentRosterCsv(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
   const csvText = extractCsvText(req.body);
 
   if (!csvText || csvText.trim().length === 0) {
-    return res.status(400).json({ success: false, message: 'CSV file content is required.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "CSV file content is required." });
   }
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
     const rawRows = parseCsv(csvText);
     if (rawRows.length < 2) {
-      return res.status(400).json({ success: false, message: 'CSV file contains no student data rows.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "CSV file contains no student data rows.",
+        });
     }
 
     const errors: string[] = [];
@@ -259,21 +398,25 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     for (let r = 1; r < rawRows.length; r++) {
       const row = rawRows[r];
       const rowNum = r + 1;
-      if (!row || row.every((c) => c === '')) continue;
+      if (!row || row.every((c) => c === "")) continue;
 
       const rollVal = row[0];
-      const nameVal = row[1] !== undefined ? row[1].trim() : '';
-      const symbolVal = row[2] !== undefined ? row[2].trim() : '';
-      const phoneVal = row[3] !== undefined ? row[3].trim() : '';
+      const nameVal = row[1] !== undefined ? row[1].trim() : "";
+      const symbolVal = row[2] !== undefined ? row[2].trim() : "";
+      const phoneVal = row[3] !== undefined ? row[3].trim() : "";
 
       const numRoll = Number(rollVal);
       if (isNaN(numRoll) || !Number.isInteger(numRoll) || numRoll <= 0) {
-        errors.push(`Row ${rowNum}: Invalid Roll Number "${rollVal}". Must be a positive integer.`);
+        errors.push(
+          `Row ${rowNum}: Invalid Roll Number "${rollVal}". Must be a positive integer.`,
+        );
         continue;
       }
 
       if (seenRolls.has(numRoll)) {
-        errors.push(`Row ${rowNum}: Duplicate Roll Number ${numRoll} found in uploaded file.`);
+        errors.push(
+          `Row ${rowNum}: Duplicate Roll Number ${numRoll} found in uploaded file.`,
+        );
         continue;
       }
       seenRolls.add(numRoll);
@@ -290,7 +433,9 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
 
       const lowerSym = symbolVal.toLowerCase();
       if (seenSymbols.has(lowerSym)) {
-        errors.push(`Row ${rowNum}: Duplicate Symbol Number "${symbolVal}" found in uploaded file.`);
+        errors.push(
+          `Row ${rowNum}: Duplicate Symbol Number "${symbolVal}" found in uploaded file.`,
+        );
         continue;
       }
       seenSymbols.add(lowerSym);
@@ -299,24 +444,28 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
         rollNumber: numRoll,
         studentName: nameVal,
         symbolNumber: symbolVal,
-        contactNumber: phoneVal || '-',
+        contactNumber: phoneVal || "-",
       });
     }
 
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed for student info CSV.',
+        message: "Validation failed for student info CSV.",
         errors,
       });
     }
 
     // Existing students in section
-    const existingStudents = await db.collection('students').find({ sectionId }).toArray();
+    const existingStudents = await db
+      .collection("students")
+      .find({ sectionId })
+      .toArray();
     const existingBySymbol = new Map<string, any>();
     const existingByRoll = new Map<number, any>();
     existingStudents.forEach((s) => {
-      if (s.symbolNumber) existingBySymbol.set(s.symbolNumber.trim().toLowerCase(), s);
+      if (s.symbolNumber)
+        existingBySymbol.set(s.symbolNumber.trim().toLowerCase(), s);
       existingByRoll.set(s.rollNumber, s);
     });
 
@@ -341,12 +490,14 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
 
     // Pass 2: For any remaining unmatched rows, check if roll number matches an unclaimed existing student
     // whose symbol was not used in this file (e.g. symbol number was edited for that roll number)
-    const parsedSymbolsSet = new Set(parsedStudents.map((p) => p.symbolNumber.toLowerCase()));
+    const parsedSymbolsSet = new Set(
+      parsedStudents.map((p) => p.symbolNumber.toLowerCase()),
+    );
     for (const p of resolvedStudents) {
       if (!p.matchedDoc) {
         const matchByRoll = existingByRoll.get(p.rollNumber);
         if (matchByRoll && !claimedStudentIds.has(matchByRoll._id.toString())) {
-          const oldSym = (matchByRoll.symbolNumber || '').trim().toLowerCase();
+          const oldSym = (matchByRoll.symbolNumber || "").trim().toLowerCase();
           if (!parsedSymbolsSet.has(oldSym)) {
             p.matchedDoc = matchByRoll;
             claimedStudentIds.add(matchByRoll._id.toString());
@@ -356,7 +507,9 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     }
 
     // Check non-updated students in the same section for symbol conflicts
-    const nonUpdatedStudents = existingStudents.filter((s) => !claimedStudentIds.has(s._id.toString()));
+    const nonUpdatedStudents = existingStudents.filter(
+      (s) => !claimedStudentIds.has(s._id.toString()),
+    );
     const nonUpdatedSymbols = new Map<string, any>();
     nonUpdatedStudents.forEach((s) => {
       if (s.symbolNumber) {
@@ -368,7 +521,7 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       const conflict = nonUpdatedSymbols.get(p.symbolNumber.toLowerCase());
       if (conflict) {
         errors.push(
-          `Symbol Number "${p.symbolNumber}" is already assigned to Roll #${conflict.rollNumber} (${conflict.studentName}) who is not included in this file.`
+          `Symbol Number "${p.symbolNumber}" is already assigned to Roll #${conflict.rollNumber} (${conflict.studentName}) who is not included in this file.`,
         );
       }
     }
@@ -376,7 +529,7 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Validation failed for student info CSV.',
+        message: "Validation failed for student info CSV.",
         errors,
       });
     }
@@ -385,15 +538,17 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     if (existingStudents.length + newCount > 1000) {
       return res.status(400).json({
         success: false,
-        message: 'Max number of students limit reached (1000 per section)',
+        message: "Max number of students limit reached (1000 per section)",
       });
     }
 
-    const classTotal = await db.collection('students').countDocuments({ classId: section.classId });
+    const classTotal = await db
+      .collection("students")
+      .countDocuments({ classId: section.classId });
     if (classTotal + newCount > 2000) {
       return res.status(400).json({
         success: false,
-        message: 'Max number of students limit reached (2000 per class)',
+        message: "Max number of students limit reached (2000 per class)",
       });
     }
 
@@ -403,16 +558,16 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
       const swapTimestamp = Date.now();
       await Promise.all(
         matchedList.map((p, idx) =>
-          db.collection('students').updateOne(
+          db.collection("students").updateOne(
             { _id: p.matchedDoc._id },
             {
               $set: {
                 rollNumber: -1 * (idx + 100000),
                 symbolNumber: `__TEMP_SWAP_${p.matchedDoc._id.toString()}_${swapTimestamp}_${idx}`,
               },
-            }
-          )
-        )
+            },
+          ),
+        ),
       );
     }
 
@@ -422,7 +577,7 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
 
     for (const p of resolvedStudents) {
       if (p.matchedDoc) {
-        await db.collection('students').updateOne(
+        await db.collection("students").updateOne(
           { _id: p.matchedDoc._id },
           {
             $set: {
@@ -433,10 +588,10 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
               parentContact: p.contactNumber,
               updatedAt: now,
             },
-          }
+          },
         );
       } else {
-        await db.collection('students').insertOne({
+        await db.collection("students").insertOne({
           teacherId: section.teacherId,
           classId: section.classId,
           sectionId,
@@ -458,7 +613,9 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to import student info CSV.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to import student info CSV." });
   }
 }
 
@@ -470,69 +627,99 @@ export async function importStudentRosterCsv(req: Request, res: Response) {
  * Note: Contact Number and Total Marks are REMOVED!
  */
 export async function exportMarksCsv(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(section.classId) });
     const classId = section.classId;
 
-    const students = await db.collection('students')
+    const students = await db
+      .collection("students")
       .find({ sectionId })
       .sort({ rollNumber: 1 })
       .toArray();
 
-    const assignments = await db.collection('assignments')
+    const assignments = await db
+      .collection("assignments")
       .find({ classId })
       .sort({ createdAt: 1 })
       .toArray();
 
-    const examinations = await db.collection('examinations')
+    const examinations = await db
+      .collection("examinations")
       .find({ classId })
       .sort({ createdAt: 1 })
       .toArray();
 
-    const marks = await db.collection('marks').find({ sectionId }).toArray();
+    const marks = await db.collection("marks").find({ sectionId }).toArray();
     const markMap = new Map<string, number | null>();
-    marks.forEach((m) => markMap.set(`${m.studentId}_${m.itemId}`, m.marksObtained));
+    marks.forEach((m) =>
+      markMap.set(`${m.studentId}_${m.itemId}`, m.marksObtained),
+    );
 
     // Columns: Roll Number, Student Name, Symbol Number, [Assignments...], [Examinations...]
-    const headers = ['Roll Number', 'Student Name', 'Symbol Number'];
+    const headers = ["Roll Number", "Student Name", "Symbol Number"];
     assignments.forEach((a) => headers.push(a.name));
     examinations.forEach((e) => headers.push(e.name));
 
     const rows = students.map((s) => {
-      const row: (string | number)[] = [s.rollNumber, s.studentName || '', s.symbolNumber || ''];
+      const row: (string | number)[] = [
+        s.rollNumber,
+        s.studentName || "",
+        s.symbolNumber || "",
+      ];
 
       assignments.forEach((a) => {
         const score = markMap.get(`${s._id.toString()}_${a._id.toString()}`);
-        row.push(score !== null && score !== undefined ? score : '');
+        row.push(score !== null && score !== undefined ? score : "");
       });
 
       examinations.forEach((e) => {
         const score = markMap.get(`${s._id.toString()}_${e._id.toString()}`);
-        row.push(score !== null && score !== undefined ? score : '');
+        row.push(score !== null && score !== undefined ? score : "");
       });
 
       return row;
     });
 
     const csvContent = generateCsv(headers, rows);
-    const filename = `${(classDoc?.name || 'Class').replace(/\s+/g, '_')}_${section.name.replace(/\s+/g, '_')}_Marks.csv`;
+    const filename = `${(classDoc?.name || "Class").replace(/\s+/g, "_")}_${section.name.replace(/\s+/g, "_")}_Marks.csv`;
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    return res.send('\uFEFF' + csvContent);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    return res.send("\uFEFF" + csvContent);
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to export marks CSV.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to export marks CSV." });
   }
 }
 
@@ -542,30 +729,54 @@ export async function exportMarksCsv(req: Request, res: Response) {
  * "Remember student name roll number and sym no here uploaded must match the student rec or dont take file if name sym no is inc or decreased or edited"
  */
 export async function importMarksCsv(req: Request, res: Response) {
-  const { sectionId } = req.params;
+  const sectionId = req.params.sectionId || req.body?.sectionId;
+  if (typeof sectionId !== "string" || !ObjectId.isValid(sectionId))
+    return res
+      .status(400)
+      .json({ success: false, message: "A valid sectionId is required." });
   const csvText = extractCsvText(req.body);
 
   if (!csvText || csvText.trim().length === 0) {
-    return res.status(400).json({ success: false, message: 'Marks CSV file content is required.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Marks CSV file content is required." });
   }
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
     const classId = section.classId;
 
     // Load enrolled students in this section
-    const existingStudents = await db.collection('students').find({ sectionId }).sort({ rollNumber: 1 }).toArray();
+    const existingStudents = await db
+      .collection("students")
+      .find({ sectionId })
+      .sort({ rollNumber: 1 })
+      .toArray();
     if (existingStudents.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'This section has no enrolled students. Please add or upload students first before uploading marks.',
+        message:
+          "This section has no enrolled students. Please add or upload students first before uploading marks.",
       });
     }
 
@@ -573,8 +784,14 @@ export async function importMarksCsv(req: Request, res: Response) {
     existingStudents.forEach((s) => studentByRoll.set(s.rollNumber, s));
 
     // Load dynamic class assignments and examinations
-    const assignments = await db.collection('assignments').find({ classId }).toArray();
-    const examinations = await db.collection('examinations').find({ classId }).toArray();
+    const assignments = await db
+      .collection("assignments")
+      .find({ classId })
+      .toArray();
+    const examinations = await db
+      .collection("examinations")
+      .find({ classId })
+      .toArray();
 
     // Helper to find assessment item matching column name and type
     const findAssessmentItem = (rawHeader: string) => {
@@ -583,45 +800,83 @@ export async function importMarksCsv(req: Request, res: Response) {
 
       // Check if header specifies type
       const isExamSpecified = /\b(exam|examination)\b/i.test(trimmed);
-      const isAssignmentSpecified = /\b(assignment|hw|homework)\b/i.test(trimmed);
+      const isAssignmentSpecified = /\b(assignment|hw|homework)\b/i.test(
+        trimmed,
+      );
 
       // Clean prefix/suffix: "Exam: Final", "Assignment: Lab 1", "[Exam] Final", "Final (Exam)", "Final [100]"
       const cleanName = trimmed
-        .replace(/^(exam|examination|assignment)\s*[:\-]\s*/i, '')
-        .replace(/^\[(exam|examination|assignment)\]\s*/i, '')
-        .replace(/^\((exam|examination|assignment)\)\s*/i, '')
-        .replace(/\s*\(?(exam|examination|assignment)\)?$/i, '')
-        .replace(/\s*\[?(exam|examination|assignment)\]?$/i, '')
-        .replace(/\s*\(\d+\)$/, '')
-        .replace(/\s*\[\d+\]$/, '')
+        .replace(/^(exam|examination|assignment)\s*[:\-]\s*/i, "")
+        .replace(/^\[(exam|examination|assignment)\]\s*/i, "")
+        .replace(/^\((exam|examination|assignment)\)\s*/i, "")
+        .replace(/\s*\(?(exam|examination|assignment)\)?$/i, "")
+        .replace(/\s*\[?(exam|examination|assignment)\]?$/i, "")
+        .replace(/\s*\(\d+\)$/, "")
+        .replace(/\s*\[\d+\]$/, "")
         .trim()
         .toLowerCase();
 
       // If exam explicitly specified, search examinations first
       if (isExamSpecified && !isAssignmentSpecified) {
-        const examMatch = examinations.find((e) => e.name.trim().toLowerCase() === cleanName || e.name.trim().toLowerCase() === lower);
+        const examMatch = examinations.find(
+          (e) =>
+            e.name.trim().toLowerCase() === cleanName ||
+            e.name.trim().toLowerCase() === lower,
+        );
         if (examMatch) {
-          return { id: examMatch._id.toString(), type: 'examination' as const, maxMarks: examMatch.maxMarks, name: examMatch.name };
+          return {
+            id: examMatch._id.toString(),
+            type: "examination" as const,
+            maxMarks: examMatch.maxMarks,
+            name: examMatch.name,
+          };
         }
       }
 
       // If assignment explicitly specified, search assignments first
       if (isAssignmentSpecified && !isExamSpecified) {
-        const assignMatch = assignments.find((a) => a.name.trim().toLowerCase() === cleanName || a.name.trim().toLowerCase() === lower);
+        const assignMatch = assignments.find(
+          (a) =>
+            a.name.trim().toLowerCase() === cleanName ||
+            a.name.trim().toLowerCase() === lower,
+        );
         if (assignMatch) {
-          return { id: assignMatch._id.toString(), type: 'assignment' as const, maxMarks: assignMatch.maxMarks, name: assignMatch.name };
+          return {
+            id: assignMatch._id.toString(),
+            type: "assignment" as const,
+            maxMarks: assignMatch.maxMarks,
+            name: assignMatch.name,
+          };
         }
       }
 
       // Check exact name match against examinations and assignments
-      const examExact = examinations.find((e) => e.name.trim().toLowerCase() === lower || e.name.trim().toLowerCase() === cleanName);
+      const examExact = examinations.find(
+        (e) =>
+          e.name.trim().toLowerCase() === lower ||
+          e.name.trim().toLowerCase() === cleanName,
+      );
       if (examExact) {
-        return { id: examExact._id.toString(), type: 'examination' as const, maxMarks: examExact.maxMarks, name: examExact.name };
+        return {
+          id: examExact._id.toString(),
+          type: "examination" as const,
+          maxMarks: examExact.maxMarks,
+          name: examExact.name,
+        };
       }
 
-      const assignExact = assignments.find((a) => a.name.trim().toLowerCase() === lower || a.name.trim().toLowerCase() === cleanName);
+      const assignExact = assignments.find(
+        (a) =>
+          a.name.trim().toLowerCase() === lower ||
+          a.name.trim().toLowerCase() === cleanName,
+      );
       if (assignExact) {
-        return { id: assignExact._id.toString(), type: 'assignment' as const, maxMarks: assignExact.maxMarks, name: assignExact.name };
+        return {
+          id: assignExact._id.toString(),
+          type: "assignment" as const,
+          maxMarks: assignExact.maxMarks,
+          name: assignExact.name,
+        };
       }
 
       return null;
@@ -629,19 +884,27 @@ export async function importMarksCsv(req: Request, res: Response) {
 
     const rawRows = parseCsv(csvText);
     if (rawRows.length < 2) {
-      return res.status(400).json({ success: false, message: 'Uploaded CSV contains no student marks rows.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Uploaded CSV contains no student marks rows.",
+        });
     }
 
     const headerRow = rawRows[0];
     if (headerRow.length < 3) {
       return res.status(400).json({
         success: false,
-        message: "CSV header is missing required columns: 'Roll Number', 'Student Name', 'Symbol Number'.",
+        message:
+          "CSV header is missing required columns: 'Roll Number', 'Student Name', 'Symbol Number'.",
       });
     }
 
     // Filter out blank rows
-    const dataRows = rawRows.slice(1).filter((r) => r && r.some((c) => c !== ''));
+    const dataRows = rawRows
+      .slice(1)
+      .filter((r) => r && r.some((c) => c !== ""));
 
     // 1. Strict Count Check: Row count must EXACTLY match the number of enrolled students in this section!
     if (dataRows.length !== existingStudents.length) {
@@ -652,14 +915,28 @@ export async function importMarksCsv(req: Request, res: Response) {
     }
 
     // Map assessment columns starting at index 3
-    const columnMappings: Array<{ colIdx: number; name: string; item: { id: string; type: 'assignment' | 'examination'; maxMarks: number; name: string } }> = [];
+    const columnMappings: Array<{
+      colIdx: number;
+      name: string;
+      item: {
+        id: string;
+        type: "assignment" | "examination";
+        maxMarks: number;
+        name: string;
+      };
+    }> = [];
 
     for (let i = 3; i < headerRow.length; i++) {
       const colName = headerRow[i]?.trim();
       if (!colName) continue;
       // If header is accidentally Total or Contact, ignore
       const lower = colName.toLowerCase();
-      if (lower === 'total' || lower === 'total marks' || lower === 'contact' || lower === 'contact number') {
+      if (
+        lower === "total" ||
+        lower === "total marks" ||
+        lower === "contact" ||
+        lower === "contact number"
+      ) {
         continue;
       }
       const match = findAssessmentItem(colName);
@@ -683,8 +960,8 @@ export async function importMarksCsv(req: Request, res: Response) {
       const rowNum = rowIdx + 2;
 
       const rollVal = row[0];
-      const nameVal = row[1] !== undefined ? row[1].trim() : '';
-      const symbolVal = row[2] !== undefined ? row[2].trim() : '';
+      const nameVal = row[1] !== undefined ? row[1].trim() : "";
+      const symbolVal = row[2] !== undefined ? row[2].trim() : "";
 
       const numericRoll = Number(rollVal);
       if (isNaN(numericRoll)) {
@@ -693,26 +970,36 @@ export async function importMarksCsv(req: Request, res: Response) {
       }
 
       if (seenRollsInFile.has(numericRoll)) {
-        errors.push(`Row ${rowNum}: Duplicate Roll Number ${numericRoll} found in marks file.`);
+        errors.push(
+          `Row ${rowNum}: Duplicate Roll Number ${numericRoll} found in marks file.`,
+        );
         continue;
       }
       seenRollsInFile.add(numericRoll);
 
       const student = studentByRoll.get(numericRoll);
       if (!student) {
-        errors.push(`Row ${rowNum}: Student with Roll Number ${numericRoll} does not exist in this section.`);
+        errors.push(
+          `Row ${rowNum}: Student with Roll Number ${numericRoll} does not exist in this section.`,
+        );
         continue;
       }
 
       // Check student name
       if (student.studentName.trim().toLowerCase() !== nameVal.toLowerCase()) {
-        errors.push(`Row ${rowNum}: Student name mismatch for Roll #${numericRoll}. Expected "${student.studentName}", found "${nameVal}". Student names cannot be altered during marks upload.`);
+        errors.push(
+          `Row ${rowNum}: Student name mismatch for Roll #${numericRoll}. Expected "${student.studentName}", found "${nameVal}". Student names cannot be altered during marks upload.`,
+        );
         continue;
       }
 
       // Check symbol number
-      if (student.symbolNumber.trim().toLowerCase() !== symbolVal.toLowerCase()) {
-        errors.push(`Row ${rowNum}: Symbol number mismatch for Roll #${numericRoll}. Expected "${student.symbolNumber}", found "${symbolVal}". Symbol numbers cannot be altered during marks upload.`);
+      if (
+        student.symbolNumber.trim().toLowerCase() !== symbolVal.toLowerCase()
+      ) {
+        errors.push(
+          `Row ${rowNum}: Symbol number mismatch for Roll #${numericRoll}. Expected "${student.symbolNumber}", found "${symbolVal}". Symbol numbers cannot be altered during marks upload.`,
+        );
         continue;
       }
 
@@ -720,7 +1007,7 @@ export async function importMarksCsv(req: Request, res: Response) {
       for (const col of columnMappings) {
         if (col.colIdx < row.length) {
           const rawMark = row[col.colIdx]?.trim();
-          if (rawMark === '' || rawMark === undefined || rawMark === null) {
+          if (rawMark === "" || rawMark === undefined || rawMark === null) {
             // Unentered score -> set to null or leave unentered
             marksToUpsert.push({
               teacherId: section.teacherId,
@@ -737,13 +1024,15 @@ export async function importMarksCsv(req: Request, res: Response) {
 
           const score = Number(rawMark);
           if (isNaN(score) || score < 0) {
-            errors.push(`Row ${rowNum} (${student.studentName}): Invalid mark score "${rawMark}" for "${col.name}". Must be a non-negative number.`);
+            errors.push(
+              `Row ${rowNum} (${student.studentName}): Invalid mark score "${rawMark}" for "${col.name}". Must be a non-negative number.`,
+            );
             continue;
           }
 
           if (score > col.item.maxMarks) {
             errors.push(
-              `Row ${rowNum} (${student.studentName}): Mark ${score} exceeds maximum allowed marks (${col.item.maxMarks}) for "${col.name}".`
+              `Row ${rowNum} (${student.studentName}): Mark ${score} exceeds maximum allowed marks (${col.item.maxMarks}) for "${col.name}".`,
             );
             continue;
           }
@@ -765,7 +1054,7 @@ export async function importMarksCsv(req: Request, res: Response) {
     if (errors.length > 0) {
       return res.status(400).json({
         success: false,
-        message: 'Marks CSV validation failed. No marks were saved.',
+        message: "Marks CSV validation failed. No marks were saved.",
         errors,
       });
     }
@@ -779,7 +1068,7 @@ export async function importMarksCsv(req: Request, res: Response) {
         },
       }));
 
-      await db.collection('marks').bulkWrite(operations);
+      await db.collection("marks").bulkWrite(operations);
     }
 
     return res.json({
@@ -789,21 +1078,153 @@ export async function importMarksCsv(req: Request, res: Response) {
     });
   } catch (err: any) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
-// Backwards-compatible aliases pointing to the new CSV implementations
-export const exportSampleExcel = exportMarksCsv;
-export const importMarksExcel = importMarksCsv;
-export const exportStudentRosterExcel = exportStudentRosterCsv;
-export const importStudentRosterExcel = importStudentRosterCsv;
-
+// Reuse the CSV authorization and validation paths while encoding actual XLSX files.
+async function exportWorkbook(
+  req: Request,
+  res: Response,
+  exporter: typeof exportMarksCsv,
+) {
+  let csv = "";
+  let filename = "student-records.csv";
+  const capture = {
+    setHeader(name: string, value: string) {
+      if (name.toLowerCase() === "content-disposition")
+        filename = /filename="([^"]+)"/.exec(value)?.[1] || filename;
+      return capture;
+    },
+    send(value: string) {
+      csv = value;
+      return capture;
+    },
+    status(code: number) {
+      res.status(code);
+      return capture;
+    },
+    json(value: unknown) {
+      return res.json(value);
+    },
+  } as unknown as Response;
+  try {
+    await exporter(req, capture);
+    if (res.headersSent) return;
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Records");
+    parseCsv(csv).forEach((row) => sheet.addRow(row));
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+    sheet.getRow(1).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF168579" },
+    };
+    sheet.columns.forEach((column) => {
+      column.width = 24;
+    });
+    const bytes = await workbook.xlsx.writeBuffer();
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${filename.replace(/\.csv$/i, ".xlsx")}"`,
+    );
+    return res.send(Buffer.from(bytes));
+  } catch {
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Unable to create the Excel workbook.",
+      });
+  }
+}
+async function importWorkbook(
+  req: Request,
+  res: Response,
+  importer: typeof importMarksCsv,
+) {
+  const data = req.body?.fileData;
+  if (typeof data !== "string" || !data.includes("base64,"))
+    return res
+      .status(400)
+      .json({ success: false, message: "Upload an .xlsx workbook." });
+  try {
+    const bytes = Buffer.from(data.split("base64,")[1], "base64");
+    if (bytes.length > 5 * 1024 * 1024)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "The workbook must be smaller than 5 MB.",
+        });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(bytes as any);
+    const sheet = workbook.worksheets[0];
+    if (!sheet || sheet.rowCount > 5000 || sheet.columnCount > 250)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Use a workbook with at most 5,000 rows and 250 columns.",
+        });
+    const rows: string[][] = [];
+    sheet.eachRow((row) => {
+      const cells: string[] = [];
+      for (let i = 1; i <= sheet.columnCount; i++) {
+        const cell = row.getCell(i);
+        if (cell.type === ExcelJS.ValueType.Formula)
+          throw new Error("Replace formulas with values before uploading.");
+        cells.push(cell.text);
+      }
+      rows.push(cells);
+    });
+    if (!rows.length)
+      return res
+        .status(400)
+        .json({ success: false, message: "The workbook is empty." });
+    req.body.csvContent = generateCsv(rows[0], rows.slice(1));
+  } catch {
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message:
+          "Could not read this .xlsx file. Use a valid workbook with values instead of formulas.",
+      });
+  }
+  return importer(req, res);
+}
+export const exportSampleExcel = (req: Request, res: Response) =>
+  exportWorkbook(req, res, exportMarksCsv);
+export const exportStudentRosterExcel = (req: Request, res: Response) =>
+  exportWorkbook(req, res, exportStudentRosterCsv);
+export const importMarksExcel = (req: Request, res: Response) =>
+  importWorkbook(req, res, importMarksCsv);
+export const importStudentRosterExcel = (req: Request, res: Response) =>
+  importWorkbook(req, res, importStudentRosterCsv);
 export async function getMarksByAssessment(req: Request, res: Response) {
   const { assessmentId } = req.params;
   try {
     const db = getDatabase();
-    const marks = await db.collection('marks').find({ itemId: assessmentId }).toArray();
+    const marks = await db
+      .collection("marks")
+      .find({
+        itemId: assessmentId,
+        ...(req.user!.role === "teacher"
+          ? { teacherId: req.user!.userId }
+          : {}),
+      })
+      .toArray();
     return res.json({
       success: true,
       data: marks.map((m) => ({
@@ -817,42 +1238,99 @@ export async function getMarksByAssessment(req: Request, res: Response) {
       })),
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch marks.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch marks." });
   }
 }
 
 export async function saveMarksBatch(req: Request, res: Response) {
   const { marks } = req.body;
-  if (!Array.isArray(marks)) {
-    return res.status(400).json({ success: false, message: 'marks array is required.' });
-  }
+  if (!Array.isArray(marks) || marks.length > 5000)
+    return res
+      .status(400)
+      .json({
+        success: false,
+        message: "Provide at most 5,000 marks per batch.",
+      });
   try {
     const db = getDatabase();
-    const now = new Date().toISOString();
-    for (const m of marks) {
-      const assessmentId = m.itemId || m.assessmentId;
-      if (m.studentId && assessmentId) {
-        await db.collection('marks').updateOne(
-          { studentId: m.studentId, itemId: assessmentId },
-          {
+    const operations: any[] = [];
+    for (const mark of marks) {
+      const itemId = mark?.itemId || mark?.assessmentId;
+      if (
+        typeof mark?.studentId !== "string" ||
+        typeof itemId !== "string" ||
+        !ObjectId.isValid(mark.studentId) ||
+        !ObjectId.isValid(itemId)
+      )
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Invalid student or assessment ID.",
+          });
+      const student = await db
+        .collection("students")
+        .findOne({
+          _id: new ObjectId(mark.studentId),
+          teacherId: req.user!.userId,
+        });
+      let item = await db
+        .collection("examinations")
+        .findOne({ _id: new ObjectId(itemId), teacherId: req.user!.userId });
+      let itemType = "examination";
+      if (!item) {
+        item = await db
+          .collection("assignments")
+          .findOne({ _id: new ObjectId(itemId), teacherId: req.user!.userId });
+        itemType = "assignment";
+      }
+      if (!student || !item || String(student.classId) !== String(item.classId))
+        return res
+          .status(403)
+          .json({
+            success: false,
+            message: "Student and assessment must belong to your classroom.",
+          });
+      const score =
+        mark.marksObtained == null || mark.marksObtained === ""
+          ? null
+          : Number(mark.marksObtained);
+      if (
+        score !== null &&
+        (!Number.isFinite(score) || score < 0 || score > item.maxMarks)
+      )
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Marks must be between zero and the assessment maximum.",
+          });
+      operations.push({
+        updateOne: {
+          filter: { studentId: mark.studentId, itemId },
+          update: {
             $set: {
               teacherId: req.user!.userId,
-              studentId: m.studentId,
-              itemId: assessmentId,
-              itemType: m.itemType || 'examination',
-              marksObtained: m.marksObtained !== undefined ? Number(m.marksObtained) : null,
-              sectionId: m.sectionId,
-              classId: m.classId,
-              updatedAt: now,
+              studentId: mark.studentId,
+              itemId,
+              itemType,
+              marksObtained: score,
+              sectionId: student.sectionId,
+              classId: student.classId,
+              updatedAt: new Date().toISOString(),
             },
           },
-          { upsert: true }
-        );
-      }
+          upsert: true,
+        },
+      });
     }
-    return res.json({ success: true, message: 'Marks updated successfully.' });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to save marks.' });
+    if (operations.length) await db.collection("marks").bulkWrite(operations);
+    return res.json({ success: true, message: "Marks updated successfully." });
+  } catch {
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to save marks." });
   }
 }
-

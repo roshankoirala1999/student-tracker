@@ -45,7 +45,7 @@ export const MarksTableModal: React.FC<Props> = ({
   onClose,
 }) => {
   const { user } = useAuth();
-  const isExpired = !!user?.isExpired;
+  const isExpired = !!user?.isExpired || !!user?.isReadOnly;
 
   const [data, setData] = useState<MarksMatrixData | null>(null);
   const [loading, setLoading] = useState(false);

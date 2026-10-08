@@ -15,11 +15,11 @@ export const DatabaseAlert: React.FC<Props> = ({ error, onRetry }) => {
         </div>
 
         <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">
-          MongoDB Atlas Connection Required
+          Your workspace is temporarily unavailable
         </h1>
 
         <p className="text-sm text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
-          The Student Tracker is configured to store all persistent records directly in MongoDB Atlas. Per strict production integrity requirements, there is no in-memory or mock storage fallback.
+          We could not connect to your workspace. Check your connection and try again. If this continues, ask your administrator to check the server and database configuration.
         </p>
 
         {error && (
@@ -30,26 +30,6 @@ export const DatabaseAlert: React.FC<Props> = ({ error, onRetry }) => {
             {error}
           </div>
         )}
-
-        <div className="bg-slate-100 dark:bg-slate-800/60 rounded-xl p-4 text-xs text-slate-700 dark:text-slate-300 space-y-2 mb-6">
-          <p className="font-semibold text-slate-900 dark:text-slate-100">How to configure:</p>
-          <ol className="list-decimal list-inside space-y-1.5 text-slate-600 dark:text-slate-400">
-            <li>Open your MongoDB Atlas dashboard (or create a free cluster at mongodb.com).</li>
-            <li>Click <strong>Connect</strong> &rarr; <strong>Drivers</strong> &rarr; Copy the connection string.</li>
-            <li>
-              It must start with <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded text-[#2B547E] dark:text-blue-400 font-mono font-semibold">mongodb+srv://</code> or <code className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded text-[#2B547E] dark:text-blue-400 font-mono font-semibold">mongodb://</code>
-            </li>
-            <li className="break-all">
-              Example format:
-              <div className="mt-1 p-2 bg-white dark:bg-slate-900 rounded border border-slate-200 dark:border-slate-700 font-mono text-[11px] text-slate-800 dark:text-slate-200 select-all">
-                mongodb+srv://&lt;username&gt;:&lt;password&gt;@cluster0.abcde.mongodb.net/student_tracker?retryWrites=true&w=majority
-              </div>
-            </li>
-            <li>
-              Save this in your AI Studio project <strong>Settings &rarr; Secrets</strong> as <code className="bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded text-[#2B547E] dark:text-blue-400 font-mono font-semibold">MONGODB_URI</code>.
-            </li>
-          </ol>
-        </div>
 
         <button
           type="button"

@@ -468,9 +468,12 @@ export async function getByClassDate(req: Request, res: Response) {
   const { classId, date } = req.query;
   try {
     const db = getDatabase();
-    const query: any = {};
+    const query: any = req.user!.role === 'teacher' ? { teacherId: req.user!.userId } : {};
     if (classId) query.classId = classId;
-    if (date) query.submissionDate = { $regex: new RegExp(`^${date}`) };
+    if (date) {
+      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ success: false, message: 'Use YYYY-MM-DD for the date.' });
+      query.submissionDate = date;
+    }
     const records = await db.collection('attendance').find(query).toArray();
     return res.json({
       success: true,
@@ -490,38 +493,15 @@ export async function getByClassDate(req: Request, res: Response) {
 }
 
 export async function saveAttendanceDirect(req: Request, res: Response) {
-  const { sectionId, dayNumber, date, records } = req.body;
-  if (!sectionId || !records) {
-    return res.status(400).json({ success: false, message: 'sectionId and records are required.' });
-  }
-  try {
-    const db = getDatabase();
-    if (!ObjectId.isValid(sectionId)) {
-      return res.status(400).json({ success: false, message: 'Invalid section ID.' });
-    }
-    const sec = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!sec) return res.status(404).json({ success: false, message: 'Section not found.' });
-    const now = date || new Date().toISOString();
-    const result = await db.collection('attendance').insertOne({
-      teacherId: req.user!.userId,
-      classId: sec.classId,
-      sectionId,
-      dayNumber: Number(dayNumber) || 1,
-      submissionDate: now,
-      records,
-      createdAt: new Date().toISOString(),
-    });
-    return res.json({ success: true, message: 'Attendance saved.', id: result.insertedId.toString() });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to save attendance.' });
-  }
+  req.params.sectionId = req.body.sectionId;
+  req.body.targetDayNumber = req.body.targetDayNumber ?? req.body.dayNumber;
+  return submitDailyAttendance(req, res);
 }
-
 export async function getStudentSummary(req: Request, res: Response) {
   const { studentId } = req.params;
   try {
     const db = getDatabase();
-    const attendance = await db.collection('attendance').find({ 'records.studentId': studentId }).toArray();
+    const attendance = await db.collection('attendance').find(req.user!.role === 'teacher' ? { teacherId: req.user!.userId } : {}).toArray();
     let present = 0;
     let absent = 0;
     attendance.forEach((att) => {
@@ -543,4 +523,3 @@ export async function getStudentSummary(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Failed to retrieve attendance summary.' });
   }
 }
-

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   UserPlus,
   UploadCloud,
@@ -39,7 +39,7 @@ export const SectionDetailView: React.FC<Props> = ({
   onRefreshSectionCount,
 }) => {
   const { user } = useAuth();
-  const isExpired = !!user?.isExpired;
+  const isExpired = !!user?.isExpired || !!user?.isReadOnly;
 
   const isCombined = section.id === 'combined';
   const [students, setStudents] = useState<StudentItem[]>([]);
@@ -59,17 +59,24 @@ export const SectionDetailView: React.FC<Props> = ({
   // Student deletion (requires password)
   const [studentToDelete, setStudentToDelete] = useState<StudentItem | null>(null);
 
+  const requestVersion = useRef(0);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const loadStudents = async () => {
+    const version = ++requestVersion.current;
+    setLoadError(null);
     setLoading(true);
     const q = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
     const url = isCombined
       ? `/api/classes/${currentClass.id}/students${q}`
       : `/api/sections/${section.id}/students${q}`;
     const res = await apiRequest<StudentItem[]>(url);
+    if (version !== requestVersion.current) return;
     setLoading(false);
     if (res.success && res.data) {
       setStudents(res.data);
       setTotalCount(res.totalCount !== undefined ? res.totalCount : res.data.length);
+    } else {
+      setLoadError(res.message || 'Unable to load students.');
     }
   };
 
@@ -191,7 +198,8 @@ export const SectionDetailView: React.FC<Props> = ({
   };
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="detail-workspace space-y-6 animate-fade-in">
+      {loadError && <div role="alert" className="p-3 text-sm rounded-xl bg-rose-50 text-rose-700">{loadError} <button className="underline" onClick={loadStudents}>Retry</button></div>}
       {/* Top Breadcrumb and Header with solid section border */}
       <div
         className={`rounded-2xl border-2 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all backdrop-blur-md ${

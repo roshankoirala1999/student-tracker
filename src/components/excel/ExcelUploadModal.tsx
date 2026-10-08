@@ -42,24 +42,26 @@ export const ExcelUploadModal: React.FC<Props> = ({
     setError(null);
     setDetailedErrors([]);
     setSuccessResult(null);
+    setBase64Data('');
 
     const isExcel =
-      selectedFile.name.endsWith('.xlsx') ||
-      selectedFile.name.endsWith('.xls') ||
-      selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-      selectedFile.type === 'application/vnd.ms-excel';
+      selectedFile.name.toLowerCase().endsWith('.xlsx') ||
+
+      selectedFile.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
 
     if (!isExcel) {
       setError('Please select a valid Excel (.xlsx) spreadsheet.');
       return;
     }
 
+    if (selectedFile.size > 5 * 1024 * 1024) { setError('Choose a workbook smaller than 5 MB.'); setFile(null); setBase64Data(''); return; }
     setFile(selectedFile);
     const reader = new FileReader();
     reader.onload = (event) => {
       const result = event.target?.result as string;
       setBase64Data(result);
     };
+    reader.onerror = () => { setError('Unable to read the selected file.'); setBase64Data(''); };
     reader.readAsDataURL(selectedFile);
   };
 
@@ -91,6 +93,7 @@ export const ExcelUploadModal: React.FC<Props> = ({
     setError(null);
     setDetailedErrors([]);
     setSuccessResult(null);
+    setBase64Data('');
 
     const res = await apiRequest(`/api/sections/${sectionId}/excel/import`, {
       method: 'POST',
@@ -156,7 +159,7 @@ export const ExcelUploadModal: React.FC<Props> = ({
               Choose Excel File
               <input
                 type="file"
-                accept=".xlsx,.xls"
+                accept=".xlsx"
                 onChange={handleFileChange}
                 className="hidden"
               />

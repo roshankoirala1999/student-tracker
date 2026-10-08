@@ -20,9 +20,11 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import { createServer as createViteServer } from 'vite';
+
 import { connectToDatabase } from './server/db.ts';
 import apiRouter from './server/apiRouter.ts';
+
+if (process.argv[1]?.endsWith('server.cjs') && !process.env.NODE_ENV) process.env.NODE_ENV = 'production';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -65,6 +67,7 @@ async function startServer() {
 
   // Mount API router
   app.use('/api', apiRouter);
+  app.use('/api', (_req, res) => res.status(404).json({ success: false, message: 'API endpoint not found.' }));
 
   // Centralized Error-Handling Middleware for API routes
   app.use('/api', (err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -84,6 +87,7 @@ async function startServer() {
 
   // Static serving for Production vs Vite Middleware in Development
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -107,4 +111,4 @@ async function startServer() {
   });
 }
 
-startServer();
+startServer().catch((error) => { console.error('Server startup failed:', error.message); process.exitCode = 1; });

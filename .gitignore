@@ -7,3 +7,7 @@ coverage/
 server-dist/
 .env*
 !.env.example
+
+server/.data/
+.npm-cache/
+.qa/

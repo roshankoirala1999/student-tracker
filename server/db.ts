@@ -1,8 +1,8 @@
-import { MongoClient, Db, ObjectId } from 'mongodb';
-import dotenv from 'dotenv';
-import bcrypt from 'bcryptjs';
-import fs from 'fs';
-import path from 'path';
+import { MongoClient, Db, ObjectId } from "mongodb";
+import dotenv from "dotenv";
+import bcrypt from "bcryptjs";
+import fs from "fs";
+import path from "path";
 
 dotenv.config();
 
@@ -13,16 +13,16 @@ let isConnecting = false;
 let usingInMemoryFallback = false;
 
 export function sanitizeErrorMessage(msg: string): string {
-  if (!msg || typeof msg !== 'string') return '';
-  return msg.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)[^@]+(@)/gi, '$1*****$2');
+  if (!msg || typeof msg !== "string") return "";
+  return msg.replace(/(mongodb(?:\+srv)?:\/\/[^:]+:)[^@]+(@)/gi, "$1*****$2");
 }
 
 // ---------------------------------------------------------
 // High-Fidelity In-Memory MongoDB Engine (Fallback for AI Studio)
 // ---------------------------------------------------------
 
-const DATA_DIR = path.join(process.cwd(), 'server', '.data');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
+const DATA_DIR = path.join(process.cwd(), "server", ".data");
+const DB_FILE = path.join(DATA_DIR, "db.json");
 
 function matchesFilter(doc: any, filter: any): boolean {
   if (!filter || Object.keys(filter).length === 0) return true;
@@ -33,11 +33,11 @@ function matchesFilter(doc: any, filter: any): boolean {
   }
 
   for (const [key, filterVal] of Object.entries(filter)) {
-    if (key === '$or') continue;
+    if (key === "$or") continue;
 
     let docVal: any;
-    if (key.includes('.')) {
-      const parts = key.split('.');
+    if (key.includes(".")) {
+      const parts = key.split(".");
       docVal = doc;
       for (const p of parts) {
         if (docVal == null) break;
@@ -55,41 +55,51 @@ function matchesFilter(doc: any, filter: any): boolean {
     }
 
     // Query operators: $in, $nin, $regex, $gt, $gte, $lt, $lte, $ne, $exists
-    if (typeof filterVal === 'object' && !(filterVal instanceof RegExp) && !(filterVal instanceof ObjectId)) {
+    if (
+      typeof filterVal === "object" &&
+      !(filterVal instanceof RegExp) &&
+      !(filterVal instanceof ObjectId)
+    ) {
       const ops = Object.keys(filterVal);
-      const isOpObj = ops.some((k) => k.startsWith('$'));
+      const isOpObj = ops.some((k) => k.startsWith("$"));
 
       if (isOpObj) {
-        if ('$in' in filterVal) {
+        if ("$in" in filterVal) {
           const inList = filterVal.$in;
           if (!Array.isArray(inList)) return false;
           const matched = inList.some((item: any) => {
-            if (item instanceof ObjectId || typeof item === 'string') {
+            if (item instanceof ObjectId || typeof item === "string") {
               return String(item) === String(docVal);
             }
             return item === docVal;
           });
           if (!matched) return false;
         }
-        if ('$nin' in filterVal) {
+        if ("$nin" in filterVal) {
           const ninList = filterVal.$nin;
           if (Array.isArray(ninList)) {
-            const found = ninList.some((item: any) => String(item) === String(docVal));
+            const found = ninList.some(
+              (item: any) => String(item) === String(docVal),
+            );
             if (found) return false;
           }
         }
-        if ('$regex' in filterVal) {
+        if ("$regex" in filterVal) {
           const regVal = (filterVal as any).$regex;
-          const regOpt = (filterVal as any).$options || '';
-          const regex = regVal instanceof RegExp ? regVal : new RegExp(String(regVal), regOpt);
-          if (!regex.test(String(docVal ?? ''))) return false;
+          const regOpt = (filterVal as any).$options || "";
+          const regex =
+            regVal instanceof RegExp
+              ? regVal
+              : new RegExp(String(regVal), regOpt);
+          if (!regex.test(String(docVal ?? ""))) return false;
         }
-        if ('$gt' in filterVal && !(docVal > filterVal.$gt)) return false;
-        if ('$gte' in filterVal && !(docVal >= filterVal.$gte)) return false;
-        if ('$lt' in filterVal && !(docVal < filterVal.$lt)) return false;
-        if ('$lte' in filterVal && !(docVal <= filterVal.$lte)) return false;
-        if ('$ne' in filterVal && String(docVal) === String(filterVal.$ne)) return false;
-        if ('$exists' in filterVal) {
+        if ("$gt" in filterVal && !(docVal > filterVal.$gt)) return false;
+        if ("$gte" in filterVal && !(docVal >= filterVal.$gte)) return false;
+        if ("$lt" in filterVal && !(docVal < filterVal.$lt)) return false;
+        if ("$lte" in filterVal && !(docVal <= filterVal.$lte)) return false;
+        if ("$ne" in filterVal && String(docVal) === String(filterVal.$ne))
+          return false;
+        if ("$exists" in filterVal) {
           const exists = docVal !== undefined;
           if (exists !== Boolean(filterVal.$exists)) return false;
         }
@@ -99,14 +109,29 @@ function matchesFilter(doc: any, filter: any): boolean {
 
     // RegExp matching
     if (filterVal instanceof RegExp) {
-      if (!filterVal.test(String(docVal ?? ''))) return false;
+      if (!filterVal.test(String(docVal ?? ""))) return false;
       continue;
     }
 
     // ID matching (handles string and ObjectId comparisons)
-    if (key === '_id' || key.endsWith('Id') || filterVal instanceof ObjectId || docVal instanceof ObjectId) {
-      const docStr = docVal != null ? (docVal.toString ? docVal.toString() : String(docVal)) : '';
-      const filterStr = filterVal != null ? (filterVal.toString ? filterVal.toString() : String(filterVal)) : '';
+    if (
+      key === "_id" ||
+      key.endsWith("Id") ||
+      filterVal instanceof ObjectId ||
+      docVal instanceof ObjectId
+    ) {
+      const docStr =
+        docVal != null
+          ? docVal.toString
+            ? docVal.toString()
+            : String(docVal)
+          : "";
+      const filterStr =
+        filterVal != null
+          ? filterVal.toString
+            ? filterVal.toString()
+            : String(filterVal)
+          : "";
       if (docStr !== filterStr) return false;
       continue;
     }
@@ -130,7 +155,7 @@ function sortDocs(docs: any[], sortObj?: Record<string, 1 | -1>): any[] {
       if (valA === valB) continue;
       if (valA == null) return dir;
       if (valB == null) return -dir;
-      if (typeof valA === 'number' && typeof valB === 'number') {
+      if (typeof valA === "number" && typeof valB === "number") {
         return (valA - valB) * dir;
       }
       const strA = String(valA);
@@ -143,13 +168,21 @@ function sortDocs(docs: any[], sortObj?: Record<string, 1 | -1>): any[] {
 }
 
 function applyUpdate(doc: any, update: any) {
+  if (update.$pull) {
+    for (const [key, condition] of Object.entries(update.$pull)) {
+      if (Array.isArray(doc[key]))
+        doc[key] = doc[key].filter(
+          (item: any) => !matchesFilter(item, condition),
+        );
+    }
+  }
   if (update.$set) {
     for (const [k, v] of Object.entries(update.$set)) {
-      if (k.includes('.')) {
-        const parts = k.split('.');
+      if (k.includes(".")) {
+        const parts = k.split(".");
         let target = doc;
         for (let i = 0; i < parts.length - 1; i++) {
-          if (!target[parts[i]] || typeof target[parts[i]] !== 'object') {
+          if (!target[parts[i]] || typeof target[parts[i]] !== "object") {
             target[parts[i]] = {};
           }
           target = target[parts[i]];
@@ -162,8 +195,8 @@ function applyUpdate(doc: any, update: any) {
   }
   if (update.$unset) {
     for (const k of Object.keys(update.$unset)) {
-      if (k.includes('.')) {
-        const parts = k.split('.');
+      if (k.includes(".")) {
+        const parts = k.split(".");
         let target = doc;
         for (let i = 0; i < parts.length - 1; i++) {
           if (!target[parts[i]]) break;
@@ -208,7 +241,11 @@ class InMemoryCursor {
     if (this.limitCount) res = res.slice(0, this.limitCount);
     return res.map((d) => {
       const cloned = { ...d };
-      if (cloned._id && typeof cloned._id === 'string' && ObjectId.isValid(cloned._id)) {
+      if (
+        cloned._id &&
+        typeof cloned._id === "string" &&
+        ObjectId.isValid(cloned._id)
+      ) {
         cloned._id = new ObjectId(cloned._id);
       }
       return cloned;
@@ -240,13 +277,19 @@ class InMemoryCollection {
     const doc = this.docs.find((d) => matchesFilter(d, filter));
     if (!doc) return null;
     const cloned = { ...doc };
-    if (cloned._id && typeof cloned._id === 'string' && ObjectId.isValid(cloned._id)) {
+    if (
+      cloned._id &&
+      typeof cloned._id === "string" &&
+      ObjectId.isValid(cloned._id)
+    ) {
       cloned._id = new ObjectId(cloned._id);
     }
     return cloned;
   }
 
-  async insertOne(doc: any): Promise<{ insertedId: ObjectId | string; acknowledged: boolean }> {
+  async insertOne(
+    doc: any,
+  ): Promise<{ insertedId: ObjectId | string; acknowledged: boolean }> {
     const newDoc = { ...doc };
     if (!newDoc._id) {
       newDoc._id = new ObjectId();
@@ -256,7 +299,9 @@ class InMemoryCollection {
     return { insertedId: newDoc._id, acknowledged: true };
   }
 
-  async insertMany(docs: any[]): Promise<{ insertedIds: Record<number, any>; acknowledged: boolean }> {
+  async insertMany(
+    docs: any[],
+  ): Promise<{ insertedIds: Record<number, any>; acknowledged: boolean }> {
     const insertedIds: Record<number, any> = {};
     docs.forEach((doc, idx) => {
       const newDoc = { ...doc };
@@ -273,18 +318,23 @@ class InMemoryCollection {
   async updateOne(
     filter: any,
     update: any,
-    options?: { upsert?: boolean }
-  ): Promise<{ matchedCount: number; modifiedCount: number; upsertedId?: any }> {
+    options?: { upsert?: boolean },
+  ): Promise<{
+    matchedCount: number;
+    modifiedCount: number;
+    upsertedId?: any;
+  }> {
     const doc = this.docs.find((d) => matchesFilter(d, filter));
     if (!doc) {
       if (options?.upsert) {
         const newDoc: any = {};
         for (const [k, v] of Object.entries(filter)) {
-          if (!k.startsWith('$') && typeof v !== 'object') {
+          if (!k.startsWith("$") && typeof v !== "object") {
             newDoc[k] = v;
           }
         }
         newDoc._id = new ObjectId();
+        applyUpdate(newDoc, { $set: update.$setOnInsert || {} });
         applyUpdate(newDoc, update);
         this.docs.push(newDoc);
         this.onMutate();
@@ -298,7 +348,37 @@ class InMemoryCollection {
     return { matchedCount: 1, modifiedCount: 1 };
   }
 
-  async updateMany(filter: any, update: any): Promise<{ matchedCount: number; modifiedCount: number }> {
+  async findOneAndUpdate(
+    filter: any,
+    update: any,
+    options?: { upsert?: boolean; returnDocument?: string },
+  ) {
+    const before = await this.findOne(filter);
+    const result = await this.updateOne(filter, update, options);
+    return options?.returnDocument === "after"
+      ? this.findOne(result.upsertedId ? { _id: result.upsertedId } : filter)
+      : before;
+  }
+
+  async bulkWrite(operations: any[]) {
+    let modifiedCount = 0;
+    for (const op of operations) {
+      if (!op.updateOne)
+        throw new Error("Unsupported local database bulk operation.");
+      const result = await this.updateOne(
+        op.updateOne.filter,
+        op.updateOne.update,
+        { upsert: op.updateOne.upsert },
+      );
+      modifiedCount += result.modifiedCount;
+    }
+    return { acknowledged: true, modifiedCount };
+  }
+
+  async updateMany(
+    filter: any,
+    update: any,
+  ): Promise<{ matchedCount: number; modifiedCount: number }> {
     const matched = this.docs.filter((d) => matchesFilter(d, filter));
     matched.forEach((d) => applyUpdate(d, update));
     if (matched.length > 0) {
@@ -332,7 +412,7 @@ class InMemoryCollection {
   }
 
   async createIndex(keys: any, options?: any): Promise<string> {
-    return 'index_ok';
+    return "index_ok";
   }
 
   aggregate(pipeline: any[]) {
@@ -343,26 +423,36 @@ class InMemoryCollection {
       } else if (stage.$group) {
         const groupKeyExpr = stage.$group._id;
         const fieldName =
-          typeof groupKeyExpr === 'string' && groupKeyExpr.startsWith('$') ? groupKeyExpr.slice(1) : null;
+          typeof groupKeyExpr === "string" && groupKeyExpr.startsWith("$")
+            ? groupKeyExpr.slice(1)
+            : null;
 
         const groups = new Map<string, any>();
         for (const item of result) {
           const groupVal = fieldName ? item[fieldName] : null;
-          const key = groupVal ? (groupVal.toString ? groupVal.toString() : String(groupVal)) : 'null';
+          const key = groupVal
+            ? groupVal.toString
+              ? groupVal.toString()
+              : String(groupVal)
+            : "null";
           if (!groups.has(key)) {
             groups.set(key, { _id: groupVal });
           }
           const g = groups.get(key);
           for (const [accKey, accExpr] of Object.entries(stage.$group)) {
-            if (accKey === '_id') continue;
-            if (typeof accExpr === 'object' && accExpr !== null && '$sum' in (accExpr as any)) {
+            if (accKey === "_id") continue;
+            if (
+              typeof accExpr === "object" &&
+              accExpr !== null &&
+              "$sum" in (accExpr as any)
+            ) {
               const sumVal = (accExpr as any).$sum;
               const inc =
-                typeof sumVal === 'number'
+                typeof sumVal === "number"
                   ? sumVal
-                  : typeof sumVal === 'string' && sumVal.startsWith('$')
-                  ? Number(item[sumVal.slice(1)] || 0)
-                  : 1;
+                  : typeof sumVal === "string" && sumVal.startsWith("$")
+                    ? Number(item[sumVal.slice(1)] || 0)
+                    : 1;
               g[accKey] = (g[accKey] || 0) + inc;
             }
           }
@@ -393,7 +483,7 @@ class InMemoryDb {
     let storedData: Record<string, any[]> = {};
     try {
       if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+        const raw = fs.readFileSync(DB_FILE, "utf-8");
         storedData = JSON.parse(raw);
       }
     } catch {
@@ -408,57 +498,67 @@ class InMemoryDb {
     for (const [colName, docs] of Object.entries(storedData)) {
       this.collections.set(
         colName,
-        new InMemoryCollection(colName, docs, () => this.scheduleSave())
+        new InMemoryCollection(colName, docs, () => this.scheduleSave()),
       );
     }
   }
 
   private getSeedData(): Record<string, any[]> {
-    const adminId = new ObjectId('650000000000000000000001');
-    const teacherId = new ObjectId('650000000000000000000002');
-    const classId = new ObjectId('650000000000000000000010');
-    const secAId = new ObjectId('650000000000000000000020');
-    const secBId = new ObjectId('650000000000000000000021');
-    const examId = new ObjectId('650000000000000000000040');
-    const assignId = new ObjectId('650000000000000000000050');
+    const adminId = new ObjectId("650000000000000000000001");
+    const teacherId = new ObjectId("650000000000000000000002");
+    const classId = new ObjectId("650000000000000000000010");
+    const secAId = new ObjectId("650000000000000000000020");
+    const secBId = new ObjectId("650000000000000000000021");
+    const examId = new ObjectId("650000000000000000000040");
+    const assignId = new ObjectId("650000000000000000000050");
 
-    const s1Id = new ObjectId('650000000000000000000030');
-    const s2Id = new ObjectId('650000000000000000000031');
-    const s3Id = new ObjectId('650000000000000000000032');
-    const s4Id = new ObjectId('650000000000000000000033');
+    const s1Id = new ObjectId("650000000000000000000030");
+    const s2Id = new ObjectId("650000000000000000000031");
+    const s3Id = new ObjectId("650000000000000000000032");
+    const s4Id = new ObjectId("650000000000000000000033");
 
     const now = new Date().toISOString();
 
     return {
       system_settings: [
-        { _id: 'new_user_defaults', expiryMode: false, canDeleteAccount: true, defaultDays: 30 },
-        { _id: 'developer_contact', name: 'Support Team', email: 'support@studenttracker.local', phoneNumber: '9800000000' },
+        {
+          _id: "new_user_defaults",
+          expiryMode: false,
+          canDeleteAccount: true,
+          defaultDays: 30,
+        },
+        {
+          _id: "developer_contact",
+          name: "Support Team",
+          email: "support@studenttracker.local",
+          phoneNumber: "9800000000",
+        },
       ],
       users: [
         {
           _id: adminId,
-          username: 'admin',
-          passwordHash: bcrypt.hashSync('AdminPassword123!', 10),
-          fullName: 'System Administrator',
-          phoneNumber: '9800000001',
-          college: 'District Education Board',
-          role: 'master_admin',
-          status: 'active',
+          username: "admin",
+          passwordHash: bcrypt.hashSync("AdminPassword123!", 10),
+          fullName: "System Administrator",
+          phoneNumber: "9800000001",
+          college: "District Education Board",
+          role: "master_admin",
+          status: "active",
           mustChangePassword: false,
           tokenVersion: 0,
           createdAt: now,
         },
         {
           _id: teacherId,
-          username: 'teacher1',
-          passwordHash: bcrypt.hashSync('TeacherPassword123!', 10),
-          fullName: 'Roshan Koirala',
-          phoneNumber: '9812345678',
-          college: 'Kathmandu Model College',
-          dob: '1995-05-15',
+          username: "teacher1",
+          passwordHash: bcrypt.hashSync("TeacherPassword123!", 10),
+          fullName: "Roshan Koirala",
+          phoneNumber: "9812345678",
+          college: "Kathmandu Model College",
+          dob: "1995-05-15",
           customFields: {},
-          role: 'teacher',
-          status: 'active',
+          role: "teacher",
+          status: "active",
           isDeletionLocked: false,
           mustChangePassword: false,
           tokenVersion: 0,
@@ -470,7 +570,7 @@ class InMemoryDb {
         {
           _id: classId,
           teacherId: teacherId.toString(),
-          name: 'Class 10 - Computer Science',
+          name: "Class 10 - Computer Science",
           order: 1,
           attendanceEnabled: true,
           createdAt: now,
@@ -481,7 +581,7 @@ class InMemoryDb {
           _id: secAId,
           classId: classId.toString(),
           teacherId: teacherId.toString(),
-          name: 'Section A',
+          name: "Section A",
           order: 1,
           createdAt: now,
         },
@@ -489,7 +589,7 @@ class InMemoryDb {
           _id: secBId,
           classId: classId.toString(),
           teacherId: teacherId.toString(),
-          name: 'Section B',
+          name: "Section B",
           order: 2,
           createdAt: now,
         },
@@ -500,10 +600,10 @@ class InMemoryDb {
           teacherId: teacherId.toString(),
           classId: classId.toString(),
           sectionId: secAId.toString(),
-          studentName: 'Aarav Sharma',
+          studentName: "Aarav Sharma",
           rollNumber: 1,
-          symbolNumber: 'CS10-01',
-          contactNumber: '9841234560',
+          symbolNumber: "CS10-01",
+          contactNumber: "9841234560",
           createdAt: now,
         },
         {
@@ -511,10 +611,10 @@ class InMemoryDb {
           teacherId: teacherId.toString(),
           classId: classId.toString(),
           sectionId: secAId.toString(),
-          studentName: 'Bikash Thapa',
+          studentName: "Bikash Thapa",
           rollNumber: 2,
-          symbolNumber: 'CS10-02',
-          contactNumber: '9841234561',
+          symbolNumber: "CS10-02",
+          contactNumber: "9841234561",
           createdAt: now,
         },
         {
@@ -522,10 +622,10 @@ class InMemoryDb {
           teacherId: teacherId.toString(),
           classId: classId.toString(),
           sectionId: secAId.toString(),
-          studentName: 'Diya Shrestha',
+          studentName: "Diya Shrestha",
           rollNumber: 3,
-          symbolNumber: 'CS10-03',
-          contactNumber: '9841234562',
+          symbolNumber: "CS10-03",
+          contactNumber: "9841234562",
           createdAt: now,
         },
         {
@@ -533,10 +633,10 @@ class InMemoryDb {
           teacherId: teacherId.toString(),
           classId: classId.toString(),
           sectionId: secBId.toString(),
-          studentName: 'Kiran Adhikari',
+          studentName: "Kiran Adhikari",
           rollNumber: 1,
-          symbolNumber: 'CS10-04',
-          contactNumber: '9841234563',
+          symbolNumber: "CS10-04",
+          contactNumber: "9841234563",
           createdAt: now,
         },
       ],
@@ -545,7 +645,7 @@ class InMemoryDb {
           _id: examId,
           classId: classId.toString(),
           teacherId: teacherId.toString(),
-          name: 'First Terminal Examination',
+          name: "First Terminal Examination",
           maxMarks: 100,
           createdAt: now,
         },
@@ -555,7 +655,7 @@ class InMemoryDb {
           _id: assignId,
           classId: classId.toString(),
           teacherId: teacherId.toString(),
-          name: 'Practical Lab Project',
+          name: "Practical Lab Project",
           maxMarks: 25,
           createdAt: now,
         },
@@ -568,7 +668,7 @@ class InMemoryDb {
           sectionId: secAId.toString(),
           studentId: s1Id.toString(),
           itemId: examId.toString(),
-          itemType: 'examination',
+          itemType: "examination",
           marksObtained: 88,
           updatedAt: now,
         },
@@ -579,7 +679,7 @@ class InMemoryDb {
           sectionId: secAId.toString(),
           studentId: s1Id.toString(),
           itemId: assignId.toString(),
-          itemType: 'assignment',
+          itemType: "assignment",
           marksObtained: 22,
           updatedAt: now,
         },
@@ -590,7 +690,7 @@ class InMemoryDb {
           sectionId: secAId.toString(),
           studentId: s2Id.toString(),
           itemId: examId.toString(),
-          itemType: 'examination',
+          itemType: "examination",
           marksObtained: 74,
           updatedAt: now,
         },
@@ -601,7 +701,7 @@ class InMemoryDb {
           sectionId: secAId.toString(),
           studentId: s3Id.toString(),
           itemId: examId.toString(),
-          itemType: 'examination',
+          itemType: "examination",
           marksObtained: 95,
           updatedAt: now,
         },
@@ -624,7 +724,7 @@ class InMemoryDb {
         for (const [colName, col] of this.collections.entries()) {
           state[colName] = col.getDocs();
         }
-        fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), 'utf-8');
+        fs.writeFileSync(DB_FILE, JSON.stringify(state, null, 2), "utf-8");
       } catch {
         // ignore disk save error
       }
@@ -635,7 +735,7 @@ class InMemoryDb {
     if (!this.collections.has(name)) {
       this.collections.set(
         name,
-        new InMemoryCollection(name, [], () => this.scheduleSave())
+        new InMemoryCollection(name, [], () => this.scheduleSave()),
       );
     }
     return this.collections.get(name);
@@ -646,15 +746,25 @@ class InMemoryDb {
 // Connection Lifecycle
 // ---------------------------------------------------------
 
-export async function connectToDatabase(): Promise<{ db: Db | null; error: string | null }> {
+export async function connectToDatabase(): Promise<{
+  db: Db | null;
+  error: string | null;
+}> {
   if (db) {
     return { db, error: null };
   }
 
-  const rawUri = process.env.MONGODB_URI;
+  const rawUri = process.env.MONGODB_URI?.trim();
+  if (process.env.NODE_ENV === "production" && !rawUri) {
+    connectionError = "MONGODB_URI is required in production.";
+    return { db: null, error: connectionError };
+  }
 
   // If a real URI is configured, attempt connecting to it first
-  if (rawUri && (rawUri.startsWith('mongodb://') || rawUri.startsWith('mongodb+srv://'))) {
+  if (
+    rawUri &&
+    (rawUri.startsWith("mongodb://") || rawUri.startsWith("mongodb+srv://"))
+  ) {
     if (isConnecting) {
       await new Promise((resolve) => setTimeout(resolve, 500));
       if (db) return { db, error: null };
@@ -670,13 +780,18 @@ export async function connectToDatabase(): Promise<{ db: Db | null; error: strin
 
       await mongoClient.connect();
       client = mongoClient;
-      db = client.db(client.options.dbName || 'student_tracker');
+      db = client.db(client.options.dbName || "student_tracker");
       connectionError = null;
       usingInMemoryFallback = false;
-      console.log('[Database] Connected to external MongoDB Atlas');
+      console.log("[Database] Connected to external MongoDB Atlas");
 
       try {
-        await db.collection('users').updateMany({}, { $unset: { adminPasswordRecord: '', plainPassword: '' } });
+        await db
+          .collection("users")
+          .updateMany(
+            {},
+            { $unset: { adminPasswordRecord: "", plainPassword: "" } },
+          );
       } catch {
         // ignore
       }
@@ -685,14 +800,22 @@ export async function connectToDatabase(): Promise<{ db: Db | null; error: strin
       return { db, error: null };
     } catch (err: any) {
       const msg = sanitizeErrorMessage(err?.message || String(err));
-      console.warn('[Database Notice]: External MongoDB Atlas connection failed (' + msg + '). Falling back to fast In-Memory storage.');
+      connectionError = "Unable to connect to the configured database.";
+      console.warn("[Database Notice]: " + msg);
+      return { db: null, error: connectionError };
     } finally {
       isConnecting = false;
     }
   }
 
-  // Graceful In-Memory fallback for AI Studio environment
-  console.log('[Database] Initializing In-Memory Document Database (Zero-Configuration Fallback)...');
+  if (rawUri) {
+    connectionError = "Invalid MONGODB_URI configuration.";
+    return { db: null, error: connectionError };
+  }
+  // Development-only local database
+  console.log(
+    "[Database] Initializing In-Memory Document Database (Zero-Configuration Fallback)...",
+  );
   const memoryDb = new InMemoryDb();
   db = memoryDb as unknown as Db;
   usingInMemoryFallback = true;
@@ -703,7 +826,9 @@ export async function connectToDatabase(): Promise<{ db: Db | null; error: strin
 
 export function getDatabase(): Db {
   if (!db) {
-    // If not connected yet, initialize in-memory fallback on demand
+    if (process.env.NODE_ENV === "production" || process.env.MONGODB_URI)
+      throw new Error("Database is unavailable.");
+    // Development-only local storage
     const memoryDb = new InMemoryDb();
     db = memoryDb as unknown as Db;
     usingInMemoryFallback = true;
@@ -722,43 +847,56 @@ export function getDbConnectionError(): string | null {
 
 export async function initializeIndexes(database: Db): Promise<void> {
   try {
-    const usersCol = database.collection('users');
+    const usersCol = database.collection("users");
     await usersCol.createIndex({ username: 1 }, { unique: true });
 
-    const classesCol = database.collection('classes');
+    const classesCol = database.collection("classes");
     await classesCol.createIndex({ teacherId: 1, name: 1 });
 
-    const sectionsCol = database.collection('sections');
+    const sectionsCol = database.collection("sections");
     await sectionsCol.createIndex({ classId: 1, name: 1 });
     await sectionsCol.createIndex({ teacherId: 1 });
 
-    const studentsCol = database.collection('students');
-    await studentsCol.createIndex({ sectionId: 1, rollNumber: 1 }, { unique: true });
-    await studentsCol.createIndex({ sectionId: 1, symbolNumber: 1 }, { unique: true });
+    const studentsCol = database.collection("students");
+    await studentsCol.createIndex(
+      { sectionId: 1, rollNumber: 1 },
+      { unique: true },
+    );
+    await studentsCol.createIndex(
+      { sectionId: 1, symbolNumber: 1 },
+      { unique: true },
+    );
     await studentsCol.createIndex({ teacherId: 1 });
 
-    const examsCol = database.collection('examinations');
+    const examsCol = database.collection("examinations");
     await examsCol.createIndex({ classId: 1, teacherId: 1 });
 
-    const assignmentsCol = database.collection('assignments');
+    const assignmentsCol = database.collection("assignments");
     await assignmentsCol.createIndex({ classId: 1, teacherId: 1 });
 
-    const marksCol = database.collection('marks');
+    const marksCol = database.collection("marks");
     await marksCol.createIndex({ studentId: 1, itemId: 1 }, { unique: true });
     await marksCol.createIndex({ sectionId: 1 });
 
-    const attendanceCol = database.collection('attendance');
-    await attendanceCol.createIndex({ sectionId: 1, dayNumber: 1 }, { unique: true });
+    const attendanceCol = database.collection("attendance");
+    await attendanceCol.createIndex(
+      { sectionId: 1, dayNumber: 1 },
+      { unique: true },
+    );
     await attendanceCol.createIndex({ teacherId: 1 });
 
-    const messagesCol = database.collection('messages');
-    await messagesCol.createIndex({ senderId: 1, recipientId: 1, createdAt: -1 });
+    const messagesCol = database.collection("messages");
+    await messagesCol.createIndex({
+      senderId: 1,
+      recipientId: 1,
+      createdAt: -1,
+    });
 
-    const notificationsCol = database.collection('notifications');
+    const notificationsCol = database.collection("notifications");
     await notificationsCol.createIndex({ recipientId: 1, createdAt: -1 });
 
-    console.log('[Database] Indexes verified successfully');
+    console.log("[Database] Indexes verified successfully");
   } catch (err) {
-    console.warn('[Database] Warning initializing indexes:', err);
+    console.warn("[Database] Warning initializing indexes:", err);
   }
 }

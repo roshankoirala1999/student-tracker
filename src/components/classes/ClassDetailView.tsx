@@ -38,7 +38,7 @@ export const ClassDetailView: React.FC<Props> = ({
   onBack,
 }) => {
   const { user } = useAuth();
-  const isExpired = !!user?.isExpired;
+  const isExpired = !!user?.isExpired || !!user?.isReadOnly;
   const [attendanceLoading, setAttendanceLoading] = useState(false);
 
   // Unified "+ Add" dropdown menu state
@@ -238,7 +238,7 @@ export const ClassDetailView: React.FC<Props> = ({
   const enrolledPercentile = Math.round((totalStudents / totalCapacity) * 100);
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="detail-workspace space-y-6 animate-fade-in">
       {/* Top Class Banner & Actions with solid class border */}
       <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border-2 border-[#2B547E] dark:border-blue-500/80 p-5 sm:p-6 shadow-sm transition-colors space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

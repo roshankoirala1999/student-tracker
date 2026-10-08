@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  BookOpen,
+  BookOpen, LayoutDashboard, Sparkles,
   ChevronDown,
   ChevronRight,
   X,
@@ -15,6 +15,8 @@ import { ClassItem, SectionItem } from '../../types/index.ts';
 import { apiRequest } from '../../api/client.ts';
 
 interface Props {
+  onGoHome: () => void;
+  onLoadSections: (id: string) => Promise<void>;
   classes: ClassItem[];
   sectionsByClass: Record<string, SectionItem[]>;
   selectedClassId: string | null;
@@ -29,6 +31,7 @@ interface Props {
 }
 
 export const Sidebar: React.FC<Props> = ({
+  onGoHome, onLoadSections,
   classes,
   sectionsByClass,
   selectedClassId,
@@ -57,6 +60,14 @@ export const Sidebar: React.FC<Props> = ({
   const headerMenuRef = useRef<HTMLDivElement>(null);
   const classMenuRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setMobileOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => { document.body.style.overflow = previous; document.removeEventListener('keydown', closeOnEscape); };
+  }, [mobileOpen, setMobileOpen]);
   // Automatically expand selected class when it changes
   useEffect(() => {
     if (selectedClassId) {
@@ -83,6 +94,7 @@ export const Sidebar: React.FC<Props> = ({
 
   const toggleClassAccordion = (classId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    void onLoadSections(classId);
     setExpandedClasses((prev) => ({
       ...prev,
       [classId]: !prev[classId],
@@ -131,7 +143,7 @@ export const Sidebar: React.FC<Props> = ({
 
     setRenameLoading(true);
     setRenameError(null);
-    const res = await apiRequest(`/api/classes/${renamingClass.id}/name`, {
+    const res = await apiRequest(`/api/classes/${renamingClass.id}/rename`, {
       method: 'PATCH',
       body: JSON.stringify({ name: renameValue.trim() }),
     });
@@ -159,10 +171,11 @@ export const Sidebar: React.FC<Props> = ({
 
       {/* Sidebar Container */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[#1A2232] dark:bg-[#111827] text-slate-200 flex flex-col transform transition-transform duration-200 ease-in-out lg:translate-x-0 border-r border-slate-800 dark:border-slate-800 shadow-xl lg:shadow-none ${
+        className={`workspace-sidebar fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[#1A2232] dark:bg-[#111827] text-slate-200 flex flex-col transform transition-transform duration-200 ease-in-out lg:translate-x-0 border-r border-slate-800 dark:border-slate-800 shadow-xl lg:shadow-none ${
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
+        <button className={`sidebar-overview ${!selectedClassId ? 'active' : ''}`} onClick={() => { onGoHome(); setMobileOpen(false); }}><LayoutDashboard size={17} /> Overview</button>
         {/* Header with Title and 3-dots Menu */}
         <div className="p-4 border-b border-slate-800/80 flex items-center justify-between min-h-[64px] relative">
           <div className="flex items-center gap-2 text-white font-bold text-xs tracking-wider uppercase">
@@ -302,7 +315,7 @@ export const Sidebar: React.FC<Props> = ({
                           setActiveClassMenuId(isMenuOpen ? null : cls.id);
                         }}
                         aria-label="Class settings"
-                        className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-black/20 text-slate-300 hover:text-white cursor-pointer transition-opacity"
+                        className="p-1.5 rounded-lg opacity-70 group-hover:opacity-100 focus:opacity-100 hover:bg-black/20 text-slate-300 hover:text-white cursor-pointer transition-opacity"
                       >
                         <MoreVertical className="w-3.5 h-3.5" />
                       </button>
@@ -427,6 +440,7 @@ export const Sidebar: React.FC<Props> = ({
             })
           )}
         </div>
+        <div className="sidebar-footer"><Sparkles size={18} className="mb-2" /><strong>A space to help them grow.</strong>Less paperwork. More possibility.<br />Your teaching day, simplified.</div>
       </aside>
 
       {/* Rename Class Modal */}
@@ -480,4 +494,3 @@ export const Sidebar: React.FC<Props> = ({
     </>
   );
 };
-

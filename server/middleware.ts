@@ -204,6 +204,7 @@ export async function requireTeacher(req: Request, res: Response, next: NextFunc
         }
       } catch (err) {
         console.error('Error checking read-only mode in requireTeacher:', err);
+        return res.status(503).json({ success:false, message:'Unable to verify editing permissions. Please try again.' });
       }
     }
   }

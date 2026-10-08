@@ -165,7 +165,8 @@ export const AuthPage: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F6FA] dark:bg-[#0B0F19] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative transition-colors duration-200">
+    <div className="auth-page min-h-screen bg-[#F4F6FA] dark:bg-[#0B0F19] flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative transition-colors duration-200">
+      <section className="auth-story animate-fade-in"><div className="eyebrow">STUDENT TRACKER · MADE FOR EDUCATORS</div><h1>Less admin.<br />More <em>bright futures.</em></h1><p>A thoughtful home for your classes, students, attendance, and results. Make space for what you do best: teaching.</p><div className="auth-feature-list"><span>✦ Organized classrooms</span><span>✓ Effortless attendance</span><span>↗ Clearer progress</span></div><div className="auth-story-art" aria-hidden="true"><span style={{height:45}} /><span style={{height:70}} /><span style={{height:95}} /><span style={{height:125}} /><b>Every small step.<br />A little more growth.</b></div></section>
       {/* Theme toggle button */}
       <div className="absolute top-4 right-4 z-20">
         <button
@@ -178,7 +179,7 @@ export const AuthPage: React.FC = () => {
         </button>
       </div>
 
-      {/* Secret Trigger Toast Notification */}
+      {/* Notifications */}
       {toastMsg && (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-50 bg-[#1A2232] text-white dark:bg-[#1E293B] dark:text-emerald-400 border border-slate-700 px-4 py-2.5 rounded-full shadow-lg text-xs font-semibold flex items-center gap-2 animate-bounce">
           <ShieldCheck className="w-4 h-4 text-emerald-400" />
@@ -196,7 +197,7 @@ export const AuthPage: React.FC = () => {
           Student Tracker
         </h2>
         <p className="mt-1 text-center text-xs text-[#355C7D] dark:text-blue-400 font-medium">
-          Professional Class, Examination, Marks &amp; Attendance Platform
+          Your teaching day, beautifully organized.
         </p>
       </div>
 

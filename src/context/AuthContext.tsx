@@ -30,6 +30,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (res.data?.database) {
         setDbConnected(res.data.database.connected);
         setDbError(res.data.database.error);
+      } else if (!res.success) {
+        setDbConnected(false);
+        setDbError(res.message || 'Unable to reach the server.');
       }
     } catch {
       // ignore

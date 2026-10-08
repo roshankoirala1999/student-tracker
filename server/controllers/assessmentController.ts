@@ -365,37 +365,10 @@ export async function listAllAssessments(req: Request, res: Response) {
 }
 
 export async function createAssessmentDirect(req: Request, res: Response) {
-  const { classId, name, title, maxMarks, type } = req.body;
-  const assessName = name || title;
-  const assessType = type === 'assignment' ? 'assignments' : 'examinations';
-  if (!classId || !assessName) {
-    return res.status(400).json({ success: false, message: 'classId and name/title are required.' });
-  }
-  try {
-    const db = getDatabase();
-    const result = await db.collection(assessType).insertOne({
-      classId,
-      teacherId: req.user!.userId,
-      name: String(assessName).trim(),
-      maxMarks: Number(maxMarks) || 100,
-      createdAt: new Date().toISOString(),
-    });
-    return res.status(201).json({
-      success: true,
-      data: {
-        id: result.insertedId.toString(),
-        name: assessName,
-        maxMarks: Number(maxMarks) || 100,
-        type: assessType === 'assignments' ? 'assignment' : 'examination',
-        classId,
-      },
-      message: 'Assessment created successfully.',
-    });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to create assessment.' });
-  }
+  req.params.classId = req.body.classId;
+  req.body.name = req.body.name || req.body.title;
+  return req.body.type === 'assignment' ? createAssignment(req, res) : createExamination(req, res);
 }
-
 export async function getAssessmentById(req: Request, res: Response) {
   const { id } = req.params;
   try {
@@ -410,6 +383,7 @@ export async function getAssessmentById(req: Request, res: Response) {
       type = 'assignment';
     }
     if (!assess) return res.status(404).json({ success: false, message: 'Assessment not found.' });
+    if (req.user!.role === 'teacher' && String(assess.teacherId) !== req.user!.userId) return res.status(403).json({ success:false, message:'You do not have access to this assessment.' });
     return res.json({
       success: true,
       data: {
@@ -425,4 +399,3 @@ export async function getAssessmentById(req: Request, res: Response) {
     return res.status(500).json({ success: false, message: 'Failed to retrieve assessment.' });
   }
 }
-

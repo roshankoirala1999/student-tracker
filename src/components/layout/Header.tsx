@@ -28,7 +28,7 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      document.documentElement.requestFullscreen?.().catch(() => {});
     } else {
       if (document.exitFullscreen) {
         document.exitFullscreen().catch(() => {});
@@ -41,7 +41,7 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
   const isAdmin = user.role === 'master_admin' || user.role === 'administrator';
 
   return (
-    <header className="bg-white dark:bg-[#1A2232] border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 z-30 shadow-2xs transition-colors duration-200">
+    <header className="workspace-header bg-white dark:bg-[#1A2232] border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 z-30 shadow-2xs transition-colors duration-200">
       <div className="w-full px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16 items-center">
           {/* Brand & Mobile Hamburger pinned to leftmost edge */}
@@ -67,7 +67,7 @@ export const Header: React.FC<Props> = ({ viewMode, setViewMode, onOpenMobileSid
               </div>
               <div>
                 <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 leading-tight group-hover:text-[#2B547E] dark:group-hover:text-blue-400 transition-colors">
-                  Student management
+                  Student Tracker
                 </h1>
               </div>
             </button>
