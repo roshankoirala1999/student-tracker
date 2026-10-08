@@ -220,6 +220,12 @@ class InMemoryCursor {
     this.docs = docs;
   }
 
+  private projection?: Record<string, number>;
+  project(fields: Record<string, number>) {
+    this.projection = fields;
+    return this;
+  }
+
   sort(s: Record<string, 1 | -1>) {
     this.sortObj = s;
     return this;
@@ -240,7 +246,19 @@ class InMemoryCursor {
     if (this.skipCount) res = res.slice(this.skipCount);
     if (this.limitCount) res = res.slice(0, this.limitCount);
     return res.map((d) => {
-      const cloned = { ...d };
+      const fields = this.projection;
+      const included =
+        fields && Object.keys(fields).filter((k) => fields[k] && k !== "_id");
+      const cloned = included?.length
+        ? Object.fromEntries(
+            [...included, ...(fields!._id === 0 ? [] : ["_id"])]
+              .filter((k) => k in d)
+              .map((k) => [k, d[k]]),
+          )
+        : { ...d };
+      if (fields)
+        for (const [key, value] of Object.entries(fields))
+          if (!value) delete cloned[key];
       if (
         cloned._id &&
         typeof cloned._id === "string" &&

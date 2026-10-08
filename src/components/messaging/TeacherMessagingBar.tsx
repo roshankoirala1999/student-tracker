@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
-import { MessageSquare } from 'lucide-react';
-import { apiRequest } from '../../api/client.ts';
-import { useAuth } from '../../context/AuthContext.tsx';
-import { MessagingModal } from './MessagingModal.tsx';
+import React, { useState, useEffect } from "react";
+import { MessageSquare } from "lucide-react";
+import { apiRequest } from "../../api/client.ts";
+import { useAuth } from "../../context/AuthContext.tsx";
+import { MessagingModal } from "./MessagingModal.tsx";
 
 interface Props {
   className?: string;
@@ -14,14 +14,19 @@ interface Props {
   } | null;
 }
 
-export const TeacherMessagingBar: React.FC<Props> = ({ className = '', initialTargetTeacher }) => {
+export const TeacherMessagingBar: React.FC<Props> = ({
+  className = "",
+  initialTargetTeacher,
+}) => {
   const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchUnreadCount = async () => {
     try {
-      const res = await apiRequest<{ unreadCount: number }>('/api/messages/unread-count');
+      const res = await apiRequest<{ unreadCount: number }>(
+        "/api/messages/unread-count",
+      );
       if (res.success && res.data) {
         setUnreadCount(res.data.unreadCount || 0);
       }
@@ -31,11 +36,14 @@ export const TeacherMessagingBar: React.FC<Props> = ({ className = '', initialTa
   };
 
   useEffect(() => {
+    if (!user) return;
     fetchUnreadCount();
     // Poll unread count every 15 seconds
-    const interval = setInterval(fetchUnreadCount, 15000);
+    const interval = setInterval(() => {
+      if (!document.hidden) void fetchUnreadCount();
+    }, 15000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user?.id]);
 
   if (!user) return null;
 
@@ -45,7 +53,6 @@ export const TeacherMessagingBar: React.FC<Props> = ({ className = '', initialTa
         type="button"
         onClick={() => {
           setIsOpen(true);
-          setUnreadCount(0);
         }}
         title="Direct Messages"
         aria-label="Direct Messages"
@@ -56,7 +63,7 @@ export const TeacherMessagingBar: React.FC<Props> = ({ className = '', initialTa
         {/* Unread indicator badge */}
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white shadow-xs animate-pulse">
-            {unreadCount > 99 ? '99+' : unreadCount}
+            {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>

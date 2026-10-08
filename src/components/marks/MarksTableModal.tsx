@@ -1,11 +1,24 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { X, Search, Check, ArrowUpDown, ArrowUp, ArrowDown, Download, UploadCloud, AlertCircle } from 'lucide-react';
-import { apiRequest } from '../../api/client.ts';
-import { useAuth } from '../../context/AuthContext.tsx';
-import { generateCsv, downloadCsvFile } from '../../utils/csv.ts';
-import { MarksCsvUploadModal } from './MarksCsvUploadModal.tsx';
+import { createPortal } from "react-dom";
+import { ReportModal } from "../reports/ReportModal.tsx";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import {
+  X,
+  Search,
+  Check,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  Download,
+  UploadCloud,
+  AlertCircle,
+} from "lucide-react";
+import { apiRequest } from "../../api/client.ts";
+import { useAuth } from "../../context/AuthContext.tsx";
+import { generateCsv, downloadCsvFile } from "../../utils/csv.ts";
+import { MarksCsvUploadModal } from "./MarksCsvUploadModal.tsx";
 
 interface Props {
+  classId: string;
   isOpen: boolean;
   sectionId: string;
   sectionName: string;
@@ -35,34 +48,52 @@ interface MarksMatrixData {
   marks: Record<string, Record<string, number | null>>; // studentId -> itemId -> score
 }
 
-type SortKey = 'rollNumber' | 'studentName' | 'symbolNumber' | string;
+type SortKey = "rollNumber" | "studentName" | "symbolNumber" | string;
 
 export const MarksTableModal: React.FC<Props> = ({
+  classId,
   isOpen,
   sectionId,
   sectionName,
   className,
   onClose,
 }) => {
+  const [reportsOpen, setReportsOpen] = useState(false);
+  const [assessmentFilter, setAssessmentFilter] = useState("all");
+  const [loadError, setLoadError] = useState("");
   const { user } = useAuth();
   const isExpired = !!user?.isExpired || !!user?.isReadOnly;
 
   const [data, setData] = useState<MarksMatrixData | null>(null);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
-  const [localScores, setLocalScores] = useState<Record<string, Record<string, string>>>({});
-  const [saveStatus, setSaveStatus] = useState<Record<string, 'saving' | 'saved' | 'error'>>({});
+  const [search, setSearch] = useState("");
+  const [localScores, setLocalScores] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [saveStatus, setSaveStatus] = useState<
+    Record<string, "saving" | "saved" | "error">
+  >({});
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
+  const loadVersion = useRef(0);
+  const saves = useRef(new Map<string, Promise<void>>());
+  const revisions = useRef<Record<string, number>>({});
+
   // Sorting state
-  const [sortKey, setSortKey] = useState<SortKey>('rollNumber');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortKey, setSortKey] = useState<SortKey>("rollNumber");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const loadData = async () => {
+    const version = ++loadVersion.current;
     setLoading(true);
-    const res = await apiRequest<MarksMatrixData>(`/api/sections/${sectionId}/marks`);
+    setLoadError("");
+    const res = await apiRequest<MarksMatrixData>(
+      `/api/sections/${sectionId}/marks`,
+    );
+    if (version !== loadVersion.current) return;
     setLoading(false);
     if (res.success && res.data) {
+      setSaveStatus({});
       setData(res.data);
       // Initialize local score inputs
       const initial: Record<string, Record<string, string>> = {};
@@ -71,14 +102,18 @@ export const MarksTableModal: React.FC<Props> = ({
         const studentMarks = res.data?.marks[s.id] || {};
         res.data?.assignments.forEach((a) => {
           const val = studentMarks[a.id];
-          initial[s.id][a.id] = val !== null && val !== undefined ? val.toString() : '';
+          initial[s.id][a.id] =
+            val !== null && val !== undefined ? val.toString() : "";
         });
         res.data?.examinations.forEach((e) => {
           const val = studentMarks[e.id];
-          initial[s.id][e.id] = val !== null && val !== undefined ? val.toString() : '';
+          initial[s.id][e.id] =
+            val !== null && val !== undefined ? val.toString() : "";
         });
       });
       setLocalScores(initial);
+    } else {
+      setLoadError(res.message || "Unable to load marks.");
     }
   };
 
@@ -86,85 +121,98 @@ export const MarksTableModal: React.FC<Props> = ({
     if (isOpen) {
       loadData();
     }
+    return () => {
+      loadVersion.current++;
+    };
   }, [isOpen, sectionId]);
 
   const handleScoreBlur = async (
     studentId: string,
     itemId: string,
-    itemType: 'assignment' | 'examination',
-    maxMarks: number
+    itemType: "assignment" | "examination",
+    maxMarks: number,
   ) => {
     if (isExpired) return;
 
-    const rawVal = localScores[studentId]?.[itemId]?.trim() ?? '';
+    const rawVal = localScores[studentId]?.[itemId]?.trim() ?? "";
     const key = `${studentId}_${itemId}`;
 
-    if (rawVal !== '') {
+    if (rawVal !== "") {
       const num = Number(rawVal);
-      if (isNaN(num) || num < 0 || num > maxMarks) {
-        setSaveStatus((prev) => ({ ...prev, [key]: 'error' }));
+      if (!Number.isFinite(num) || num < 0 || num > maxMarks) {
+        revisions.current[key] = (revisions.current[key] || 0) + 1;
+        setSaveStatus((prev) => ({ ...prev, [key]: "error" }));
         return;
       }
     }
 
-    setSaveStatus((prev) => ({ ...prev, [key]: 'saving' }));
-
-    const res = await apiRequest(`/api/sections/${sectionId}/marks/single`, {
-      method: 'POST',
-      body: JSON.stringify({
-        studentId,
-        itemId,
-        itemType,
-        marksObtained: rawVal === '' ? null : Number(rawVal),
-      }),
-    });
-
-    if (res.success) {
-      setSaveStatus((prev) => ({ ...prev, [key]: 'saved' }));
-      setTimeout(() => {
-        setSaveStatus((prev) => {
-          const copy = { ...prev };
-          delete copy[key];
-          return copy;
-        });
-      }, 1500);
-    } else {
-      setSaveStatus((prev) => ({ ...prev, [key]: 'error' }));
-    }
+    const revision = (revisions.current[key] || 0) + 1;
+    revisions.current[key] = revision;
+    setSaveStatus((prev) => ({ ...prev, [key]: "saving" }));
+    // Serialize writes to the same cell so an older request cannot overwrite a newer score.
+    const save = (saves.current.get(key) || Promise.resolve()).then(
+      async () => {
+        const res = await apiRequest(
+          `/api/sections/${sectionId}/marks/single`,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              studentId,
+              itemId,
+              itemType,
+              marksObtained: rawVal === "" ? null : Number(rawVal),
+            }),
+          },
+        );
+        if (revisions.current[key] === revision) {
+          setSaveStatus((prev) => ({
+            ...prev,
+            [key]: res.success ? "saved" : "error",
+          }));
+        }
+      },
+    );
+    saves.current.set(key, save);
+    await save;
+    if (saves.current.get(key) === save) saves.current.delete(key);
   };
 
   // Toggle column sort
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
-      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+      setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortOrder('asc');
+      setSortOrder("asc");
     }
   };
 
   // Download Current Table as CSV Template
   const handleDownloadCurrentTemplate = () => {
     if (!data) return;
-    const headers = ['Roll Number', 'Student Name', 'Symbol Number'];
+    const headers = ["Roll Number", "Student Name", "Symbol Number"];
     data.assignments.forEach((a) => headers.push(a.name));
     data.examinations.forEach((e) => headers.push(e.name));
 
     const rows = data.students.map((s) => {
-      const row: (string | number)[] = [s.rollNumber, s.studentName || '', s.symbolNumber || ''];
+      const row: (string | number)[] = [
+        s.rollNumber,
+        s.studentName || "",
+        s.symbolNumber || "",
+      ];
       data.assignments.forEach((a) => {
         const val = localScores[s.id]?.[a.id];
-        row.push(val !== undefined && val !== null ? val : '');
+        row.push(val !== undefined && val !== null ? val : "");
       });
       data.examinations.forEach((e) => {
         const val = localScores[s.id]?.[e.id];
-        row.push(val !== undefined && val !== null ? val : '');
+        row.push(val !== undefined && val !== null ? val : "");
       });
       return row;
     });
 
     const csv = generateCsv(headers, rows);
-    const filename = `${className.replace(/\s+/g, '_')}_${sectionName.replace(/\s+/g, '_')}_Marks.csv`;
+    const filename = `${className.replace(/\s+/g, "_")}_${sectionName.replace(/\s+/g, "_")}_Marks.csv`;
     downloadCsvFile(filename, csv);
   };
 
@@ -184,37 +232,51 @@ export const MarksTableModal: React.FC<Props> = ({
 
     return [...filtered].sort((a, b) => {
       let comparison = 0;
-      if (sortKey === 'rollNumber') {
+      if (sortKey === "rollNumber") {
         comparison = a.rollNumber - b.rollNumber;
-      } else if (sortKey === 'studentName') {
+      } else if (sortKey === "studentName") {
         comparison = a.studentName.localeCompare(b.studentName);
-      } else if (sortKey === 'symbolNumber') {
+      } else if (sortKey === "symbolNumber") {
         comparison = a.symbolNumber.localeCompare(b.symbolNumber);
       } else {
         // Assessment item score sort
-        const valA = parseFloat(localScores[a.id]?.[sortKey] || '0') || 0;
-        const valB = parseFloat(localScores[b.id]?.[sortKey] || '0') || 0;
+        const valA = parseFloat(localScores[a.id]?.[sortKey] || "0") || 0;
+        const valB = parseFloat(localScores[b.id]?.[sortKey] || "0") || 0;
         comparison = valA - valB;
       }
 
-      return sortOrder === 'asc' ? comparison : -comparison;
+      return sortOrder === "asc" ? comparison : -comparison;
     });
   }, [data, search, sortKey, sortOrder, localScores]);
 
+  const shownAssignments = (data?.assignments || []).filter(
+    (a) =>
+      assessmentFilter === "all" ||
+      assessmentFilter === "assignment" ||
+      a.id === assessmentFilter,
+  );
+  const shownExams = (data?.examinations || []).filter(
+    (a) =>
+      assessmentFilter === "all" ||
+      assessmentFilter === "examination" ||
+      a.id === assessmentFilter,
+  );
   if (!isOpen) return null;
 
   const renderSortIcon = (key: SortKey) => {
     if (sortKey !== key) {
-      return <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline-block ml-1" />;
+      return (
+        <ArrowUpDown className="w-3 h-3 text-slate-400 opacity-60 inline-block ml-1" />
+      );
     }
-    return sortOrder === 'asc' ? (
+    return sortOrder === "asc" ? (
       <ArrowUp className="w-3 h-3 text-[#2B547E] dark:text-blue-400 inline-block ml-1 font-bold" />
     ) : (
       <ArrowDown className="w-3 h-3 text-[#2B547E] dark:text-blue-400 inline-block ml-1 font-bold" />
     );
   };
 
-  return (
+  return createPortal(
     <>
       <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60 p-0 sm:p-4 backdrop-blur-xs">
         <div className="bg-white dark:bg-[#1E293B] rounded-t-3xl sm:rounded-2xl shadow-2xl max-w-6xl w-full border border-slate-200/80 dark:border-slate-700 max-h-[94vh] flex flex-col overflow-hidden transition-colors">
@@ -228,7 +290,8 @@ export const MarksTableModal: React.FC<Props> = ({
                 </h3>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Assignment and examination scores for enrolled students. Scores save automatically on blur.
+                Assignment and examination scores for enrolled students. Scores
+                save automatically on blur.
               </p>
             </div>
             <button
@@ -245,10 +308,60 @@ export const MarksTableModal: React.FC<Props> = ({
           {isExpired && (
             <div className="bg-rose-50 dark:bg-rose-950/50 border-b border-rose-200 dark:border-rose-900/60 px-6 py-2.5 flex items-center gap-2 text-xs font-semibold text-rose-800 dark:text-rose-200">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>Account expired. You are currently in view-only mode. Editing and marks uploads are disabled.</span>
+              <span>
+                Account expired. You are currently in view-only mode. Editing
+                and marks uploads are disabled.
+              </span>
             </div>
           )}
 
+          {loadError && (
+            <div className="record-error" role="alert">
+              {loadError}
+              <button onClick={loadData}>Retry</button>
+            </div>
+          )}
+          <div className="marks-summary-bar">
+            <label>
+              Show assessment
+              <select
+                aria-label="Filter marks by assessment"
+                value={assessmentFilter}
+                onChange={(e) => setAssessmentFilter(e.target.value)}
+              >
+                <option value="all">All marks</option>
+                <option value="examination">Examinations</option>
+                <option value="assignment">Assignments</option>
+                {data?.examinations.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+                {data?.assignments.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="record-secondary"
+              disabled={Object.values(saveStatus).some(
+                (s) => s === "saving" || s === "error",
+              )}
+              onClick={() => setReportsOpen(true)}
+            >
+              <Download size={16} />
+              PDF / CSV reports
+            </button>
+            <span role="status">
+              {Object.values(saveStatus).some((s) => s === "error")
+                ? "Check highlighted scores. Click a field and leave it to retry."
+                : Object.values(saveStatus).some((s) => s === "saving")
+                  ? "Saving changes…"
+                  : "Scores save when you leave a field."}
+            </span>
+          </div>
           {/* Toolbar */}
           <div className="px-6 py-3 border-b border-slate-100 dark:border-slate-700/80 bg-[#F4F6FA] dark:bg-[#0F172A] flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="relative max-w-xs w-full">
@@ -264,7 +377,8 @@ export const MarksTableModal: React.FC<Props> = ({
 
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-slate-500 dark:text-slate-400 mr-2 hidden sm:inline">
-                {sortedStudents.length} student{sortedStudents.length === 1 ? '' : 's'}
+                {sortedStudents.length} student
+                {sortedStudents.length === 1 ? "" : "s"}
               </span>
 
               {/* Download Template (Current Table CSV) */}
@@ -285,7 +399,11 @@ export const MarksTableModal: React.FC<Props> = ({
                 onClick={() => setUploadModalOpen(true)}
                 disabled={isExpired}
                 className="flex items-center gap-1.5 px-3 py-2 min-h-[38px] bg-[#2B547E] hover:bg-[#355C7D] disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-xs font-semibold shadow-2xs cursor-pointer transition-colors"
-                title={isExpired ? 'Account expired (read-only)' : 'Upload edited marks CSV'}
+                title={
+                  isExpired
+                    ? "Account expired (read-only)"
+                    : "Upload edited marks CSV"
+                }
               >
                 <UploadCloud className="w-3.5 h-3.5" />
                 <span>Upload Marks</span>
@@ -296,10 +414,14 @@ export const MarksTableModal: React.FC<Props> = ({
           {/* Table Container with Sticky Columns */}
           <div className="p-4 sm:p-6 overflow-auto flex-1 bg-white dark:bg-[#1E293B]">
             {loading ? (
-              <div className="py-16 text-center text-xs text-slate-500 dark:text-slate-400">Loading marks...</div>
-            ) : !data || (data.assignments.length === 0 && data.examinations.length === 0) ? (
+              <div className="py-16 text-center text-xs text-slate-500 dark:text-slate-400">
+                Loading marks...
+              </div>
+            ) : !data ||
+              (shownAssignments.length === 0 && shownExams.length === 0) ? (
               <div className="text-center py-16 text-xs text-slate-500 dark:text-slate-400 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50/50 dark:bg-slate-800/30">
-                No assignments or examinations configured for this class yet. Go back to the Class Overview to add coursework and exams first.
+                No assignments or examinations configured for this class yet. Go
+                back to the Class Overview to add coursework and exams first.
               </div>
             ) : (
               <div className="border border-slate-200 dark:border-slate-700 rounded-2xl overflow-x-auto shadow-2xs relative">
@@ -308,42 +430,42 @@ export const MarksTableModal: React.FC<Props> = ({
                     <tr>
                       {/* Sticky Roll Number */}
                       <th
-                        onClick={() => handleSort('rollNumber')}
+                        onClick={() => handleSort("rollNumber")}
                         className="py-3 px-3 border-r border-slate-200 dark:border-slate-700 w-16 text-center cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors sticky left-0 z-30 bg-[#F4F6FA] dark:bg-[#0F172A]"
                         title="Sort by Roll Number"
                       >
                         <div className="flex items-center justify-center gap-1">
                           <span>Roll</span>
-                          {renderSortIcon('rollNumber')}
+                          {renderSortIcon("rollNumber")}
                         </div>
                       </th>
 
                       {/* Sticky Student Name */}
                       <th
-                        onClick={() => handleSort('studentName')}
+                        onClick={() => handleSort("studentName")}
                         className="py-3 px-3 border-r border-slate-200 dark:border-slate-700 min-w-[160px] cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors sticky left-16 z-30 bg-[#F4F6FA] dark:bg-[#0F172A]"
                         title="Sort by Student Name"
                       >
                         <div className="flex items-center gap-1">
                           <span>Student Name</span>
-                          {renderSortIcon('studentName')}
+                          {renderSortIcon("studentName")}
                         </div>
                       </th>
 
                       {/* Symbol Number */}
                       <th
-                        onClick={() => handleSort('symbolNumber')}
+                        onClick={() => handleSort("symbolNumber")}
                         className="py-3 px-3 border-r border-slate-200 dark:border-slate-700 w-28 cursor-pointer hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors"
                         title="Sort by Symbol Number"
                       >
                         <div className="flex items-center gap-1">
                           <span>Symbol</span>
-                          {renderSortIcon('symbolNumber')}
+                          {renderSortIcon("symbolNumber")}
                         </div>
                       </th>
 
                       {/* Assignment Headers */}
-                      {data.assignments.map((a) => (
+                      {shownAssignments.map((a) => (
                         <th
                           key={a.id}
                           onClick={() => handleSort(a.id)}
@@ -354,12 +476,14 @@ export const MarksTableModal: React.FC<Props> = ({
                             <span>{a.name}</span>
                             {renderSortIcon(a.id)}
                           </div>
-                          <div className="text-[10px] text-[#355C7D] dark:text-blue-300 font-medium">Max: {a.maxMarks}</div>
+                          <div className="text-[10px] text-[#355C7D] dark:text-blue-300 font-medium">
+                            Max: {a.maxMarks}
+                          </div>
                         </th>
                       ))}
 
                       {/* Examination Headers */}
-                      {data.examinations.map((e) => (
+                      {shownExams.map((e) => (
                         <th
                           key={e.id}
                           onClick={() => handleSort(e.id)}
@@ -370,7 +494,9 @@ export const MarksTableModal: React.FC<Props> = ({
                             <span>{e.name}</span>
                             {renderSortIcon(e.id)}
                           </div>
-                          <div className="text-[10px] text-amber-800 dark:text-amber-400 font-medium">Max: {e.maxMarks}</div>
+                          <div className="text-[10px] text-amber-800 dark:text-amber-400 font-medium">
+                            Max: {e.maxMarks}
+                          </div>
                         </th>
                       ))}
                     </tr>
@@ -379,10 +505,14 @@ export const MarksTableModal: React.FC<Props> = ({
                     {sortedStudents.length === 0 ? (
                       <tr>
                         <td
-                          colSpan={3 + data.assignments.length + data.examinations.length}
+                          colSpan={
+                            3 + shownAssignments.length + shownExams.length
+                          }
                           className="py-12 text-center text-slate-400"
                         >
-                          {search ? 'No students match your search criteria.' : 'No enrolled students found in this section.'}
+                          {search
+                            ? "No students match your search criteria."
+                            : "No enrolled students found in this section."}
                         </td>
                       </tr>
                     ) : (
@@ -408,7 +538,7 @@ export const MarksTableModal: React.FC<Props> = ({
                             </td>
 
                             {/* Assignment score inputs */}
-                            {data.assignments.map((a) => {
+                            {shownAssignments.map((a) => {
                               const key = `${s.id}_${a.id}`;
                               const status = saveStatus[key];
                               return (
@@ -420,10 +550,11 @@ export const MarksTableModal: React.FC<Props> = ({
                                     <input
                                       type="number"
                                       min={0}
+                                      aria-label={`${s.studentName}: ${a.name} (out of ${a.maxMarks})`}
                                       max={a.maxMarks}
                                       step="any"
                                       disabled={isExpired}
-                                      value={localScores[s.id]?.[a.id] ?? ''}
+                                      value={localScores[s.id]?.[a.id] ?? ""}
                                       onChange={(e) => {
                                         const val = e.target.value;
                                         setLocalScores((prev) => ({
@@ -434,15 +565,22 @@ export const MarksTableModal: React.FC<Props> = ({
                                           },
                                         }));
                                       }}
-                                      onBlur={() => handleScoreBlur(s.id, a.id, 'assignment', a.maxMarks)}
+                                      onBlur={() =>
+                                        handleScoreBlur(
+                                          s.id,
+                                          a.id,
+                                          "assignment",
+                                          a.maxMarks,
+                                        )
+                                      }
                                       placeholder="—"
                                       className={`w-16 py-1 px-1.5 text-center text-xs rounded-lg border transition-colors focus:outline-none focus:ring-1 disabled:opacity-60 disabled:cursor-not-allowed ${
-                                        status === 'error'
-                                          ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
-                                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:border-[#2B547E] dark:focus:border-blue-500 focus:ring-[#2B547E]'
+                                        status === "error"
+                                          ? "border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300"
+                                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:border-[#2B547E] dark:focus:border-blue-500 focus:ring-[#2B547E]"
                                       }`}
                                     />
-                                    {status === 'saved' && (
+                                    {status === "saved" && (
                                       <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 absolute right-1 pointer-events-none" />
                                     )}
                                   </div>
@@ -451,7 +589,7 @@ export const MarksTableModal: React.FC<Props> = ({
                             })}
 
                             {/* Examination score inputs */}
-                            {data.examinations.map((e) => {
+                            {shownExams.map((e) => {
                               const key = `${s.id}_${e.id}`;
                               const status = saveStatus[key];
                               return (
@@ -463,10 +601,11 @@ export const MarksTableModal: React.FC<Props> = ({
                                     <input
                                       type="number"
                                       min={0}
+                                      aria-label={`${s.studentName}: ${e.name} (out of ${e.maxMarks})`}
                                       max={e.maxMarks}
                                       step="any"
                                       disabled={isExpired}
-                                      value={localScores[s.id]?.[e.id] ?? ''}
+                                      value={localScores[s.id]?.[e.id] ?? ""}
                                       onChange={(evt) => {
                                         const val = evt.target.value;
                                         setLocalScores((prev) => ({
@@ -477,15 +616,22 @@ export const MarksTableModal: React.FC<Props> = ({
                                           },
                                         }));
                                       }}
-                                      onBlur={() => handleScoreBlur(s.id, e.id, 'examination', e.maxMarks)}
+                                      onBlur={() =>
+                                        handleScoreBlur(
+                                          s.id,
+                                          e.id,
+                                          "examination",
+                                          e.maxMarks,
+                                        )
+                                      }
                                       placeholder="—"
                                       className={`w-16 py-1 px-1.5 text-center text-xs rounded-lg border transition-colors focus:outline-none focus:ring-1 disabled:opacity-60 disabled:cursor-not-allowed ${
-                                        status === 'error'
-                                          ? 'border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300'
-                                          : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:border-amber-600 focus:ring-amber-600'
+                                        status === "error"
+                                          ? "border-rose-500 bg-rose-50 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300"
+                                          : "border-slate-200 dark:border-slate-700 bg-white dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 focus:border-amber-600 focus:ring-amber-600"
                                       }`}
                                     />
-                                    {status === 'saved' && (
+                                    {status === "saved" && (
                                       <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400 absolute right-1 pointer-events-none" />
                                     )}
                                   </div>
@@ -504,7 +650,10 @@ export const MarksTableModal: React.FC<Props> = ({
 
           {/* Footer */}
           <div className="px-6 py-3.5 border-t border-slate-200 dark:border-slate-700 flex flex-col sm:flex-row justify-between items-center gap-3 bg-[#F4F6FA] dark:bg-[#0F172A] text-xs text-slate-500 dark:text-slate-400">
-            <span>Click any column header to sort ascending or descending. Unentered scores default to empty.</span>
+            <span>
+              Click any column header to sort ascending or descending. Unentered
+              scores default to empty.
+            </span>
             <button
               type="button"
               onClick={onClose}
@@ -516,6 +665,16 @@ export const MarksTableModal: React.FC<Props> = ({
         </div>
       </div>
 
+      {reportsOpen && (
+        <ReportModal
+          classId={classId}
+          className={className}
+          sectionId={sectionId}
+          initialKind="marks"
+          onClose={() => setReportsOpen(false)}
+          onImported={loadData}
+        />
+      )}
       {/* Marks CSV Upload Modal */}
       <MarksCsvUploadModal
         isOpen={uploadModalOpen}
@@ -529,6 +688,7 @@ export const MarksTableModal: React.FC<Props> = ({
         }}
         onDownloadCurrentTemplate={handleDownloadCurrentTemplate}
       />
-    </>
+    </>,
+    document.body,
   );
 };

@@ -33,7 +33,7 @@ npm run build
 npm audit
 ```
 
-Regression tests create an isolated temporary database and exercise authentication, CSRF protection, ownership checks, class ordering/renaming, attendance, CSV/XLSX round-trips, and student deletion cleanup. They do not touch your development or production records. Live MongoDB deployment and multi-user load testing remain deployment checks.
+Regression tests create an isolated temporary database and exercise authentication, CSRF protection, ownership checks, class ordering/renaming, attendance, CSV report round-trips, PDF report scope, chat deletion permissions, and student deletion cleanup. They do not touch your development or production records. Live MongoDB deployment and multi-user load testing remain deployment checks.
 
 ## Dashboard
 
@@ -49,4 +49,23 @@ The information hierarchy was informed by [MyStudyLife](https://mystudylife.com/
 
 ## Import formats
 
-CSV routes accept `csvContent`. Excel routes return real `.xlsx` workbooks and accept a base64 data URL in `fileData`. Excel uploads are limited to 5 MB, 5,000 rows, and 250 columns. Convert legacy `.xls` files to `.xlsx` first. Replace spreadsheet formulas with values before uploading. Existing roster and marks validation also applies to Excel imports.
+Uploads accept **CSV only**. Download the CSV template/report, retain its headings and student identities, edit values, then upload it. Legacy Excel import endpoints return HTTP 415; legacy Excel download endpoints remain available for compatibility.
+
+## Attendance, marks and assignments
+
+- Attendance opens today's saved record or a new all-present roster. Toggle absences, search by name/roll/symbol, view absent students, add a note, and save. Historical days retain their date.
+- Open **Attendance & marks reports · PDF / CSV** from a class, or **Reports · PDF / CSV** from a section. Choose one section or all sections, an attendance date range, or an exam/assignment. PDF reports have repeating table headings and page numbers. PDF generation is loaded only when requested.
+- Attendance CSV templates cover the next day for each selected section. Fill every status with `present` or `absent`. Each uploaded section/day must contain its complete roster, consistent date and remarks. Existing day dates cannot be changed through import.
+- Marks CSV uses one row per student/assessment. Blank scores remain ungraded; numeric scores must be within the assessment maximum. Validation checks every row before applying any writes. The report importer accepts up to 5 MB / 20,000 rows.
+- Marks entry supports assessment filtering and ordered autosaves per cell.
+
+## Messaging
+
+- Search people and messages, see sent/read indicators, and retain drafts while switching conversations.
+- **Delete for me** hides a message only for that account. **Unsend for everyone** replaces the sender's own message with a tombstone. Deleting an entire chat hides existing messages from that account's inbox; a new message can reopen the conversation.
+- Deleting a teacher account preserves its chat history for other participants, labels the account as deleted, and prevents further replies. The administrator inbox continues to use the existing shared-mailbox model.
+- Conversations refresh every seven seconds; open threads refresh every four seconds while the browser tab is visible.
+
+## Interface motion
+
+Shared button feedback, card entrances, dialog transitions, table hover states and form focus rings use short CSS animations. Click rings work with mouse, touch and keyboard, ignore disabled controls, and clean up after completion. The reduced-motion preference disables decorative motion. Surface animations finish without a transform so fixed dialogs are not trapped inside an animated page.

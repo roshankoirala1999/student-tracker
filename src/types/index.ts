@@ -188,6 +188,7 @@ export interface ApiResponse<T = any> {
 }
 
 export interface ChatMessage {
+  isUnsent?: boolean;
   id: string;
   conversationId: string;
   senderId: string;
@@ -226,4 +227,3 @@ export interface TeacherSearchItem {
   role?: string;
   isDeleted?: boolean;
 }
-

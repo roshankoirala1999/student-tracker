@@ -1,10 +1,10 @@
-import { Request, Response } from 'express';
-import { ObjectId } from 'mongodb';
-import { getDatabase } from '../db.ts';
+import { Request, Response } from "express";
+import { ObjectId } from "mongodb";
+import { getDatabase } from "../db.ts";
 
 // Helper to determine if a role is admin
 function isAdminRole(role?: string): boolean {
-  return role === 'master_admin' || role === 'administrator';
+  return role === "master_admin" || role === "administrator";
 }
 
 /**
@@ -14,7 +14,9 @@ export async function getConversations(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
     const db = getDatabase();
@@ -23,11 +25,12 @@ export async function getConversations(req: Request, res: Response) {
     let messages: any[] = [];
     if (isAdmin) {
       // Find all messages involving admin
-      messages = await db.collection('messages')
+      messages = await db
+        .collection("messages")
         .find({
           $or: [
-            { senderRole: { $in: ['administrator', 'master_admin'] } },
-            { recipientRole: { $in: ['administrator', 'master_admin'] } },
+            { senderRole: { $in: ["administrator", "master_admin"] } },
+            { recipientRole: { $in: ["administrator", "master_admin"] } },
             { conversationId: /^admin:/ },
           ],
         })
@@ -35,7 +38,8 @@ export async function getConversations(req: Request, res: Response) {
         .toArray();
     } else {
       // Find all messages involving this teacher
-      messages = await db.collection('messages')
+      messages = await db
+        .collection("messages")
         .find({
           $or: [
             { senderId: user.userId },
@@ -47,18 +51,22 @@ export async function getConversations(req: Request, res: Response) {
         .toArray();
     }
 
+    messages = messages.filter((m) => !m.hiddenFor?.[user.userId]);
     // Group messages by other participant
-    const conversationMap = new Map<string, {
-      conversationId: string;
-      participantId: string;
-      participantUsername: string;
-      participantFullName?: string;
-      participantRole: string;
-      participantPhoneNumber?: string;
-      lastMessage: string;
-      lastMessageAt: string;
-      unreadCount: number;
-    }>();
+    const conversationMap = new Map<
+      string,
+      {
+        conversationId: string;
+        participantId: string;
+        participantUsername: string;
+        participantFullName?: string;
+        participantRole: string;
+        participantPhoneNumber?: string;
+        lastMessage: string;
+        lastMessageAt: string;
+        unreadCount: number;
+      }
+    >();
 
     for (const msg of messages) {
       let participantId: string;
@@ -71,40 +79,40 @@ export async function getConversations(req: Request, res: Response) {
         if (isAdminRole(msg.senderRole)) {
           participantId = msg.recipientId;
           participantUsername = msg.recipientUsername;
-          participantFullName = msg.recipientFullName || '';
+          participantFullName = msg.recipientFullName || "";
           participantRole = msg.recipientRole;
         } else {
           participantId = msg.senderId;
           participantUsername = msg.senderUsername;
-          participantFullName = msg.senderFullName || '';
+          participantFullName = msg.senderFullName || "";
           participantRole = msg.senderRole;
         }
       } else {
         // Current user is teacher
         if (msg.senderId === user.userId) {
           // Other is recipient
-          if (isAdminRole(msg.recipientRole) || msg.recipientId === 'admin') {
-            participantId = 'admin';
-            participantUsername = 'admin';
-            participantFullName = 'Admin';
-            participantRole = 'master_admin';
+          if (isAdminRole(msg.recipientRole) || msg.recipientId === "admin") {
+            participantId = "admin";
+            participantUsername = "admin";
+            participantFullName = "Admin";
+            participantRole = "master_admin";
           } else {
             participantId = msg.recipientId;
             participantUsername = msg.recipientUsername;
-            participantFullName = msg.recipientFullName || '';
+            participantFullName = msg.recipientFullName || "";
             participantRole = msg.recipientRole;
           }
         } else {
           // Other is sender
-          if (isAdminRole(msg.senderRole) || msg.senderId === 'admin') {
-            participantId = 'admin';
-            participantUsername = 'admin';
-            participantFullName = 'Admin';
-            participantRole = 'master_admin';
+          if (isAdminRole(msg.senderRole) || msg.senderId === "admin") {
+            participantId = "admin";
+            participantUsername = "admin";
+            participantFullName = "Admin";
+            participantRole = "master_admin";
           } else {
             participantId = msg.senderId;
             participantUsername = msg.senderUsername;
-            participantFullName = msg.senderFullName || '';
+            participantFullName = msg.senderFullName || "";
             participantRole = msg.senderRole;
           }
         }
@@ -114,16 +122,18 @@ export async function getConversations(req: Request, res: Response) {
 
       const convKey = participantId;
       const isUnread = isAdmin
-        ? (!msg.read && !isAdminRole(msg.senderRole))
-        : (!msg.read && msg.recipientId === user.userId);
+        ? !msg.read && !isAdminRole(msg.senderRole)
+        : !msg.read && msg.recipientId === user.userId;
 
       if (!conversationMap.has(convKey)) {
         conversationMap.set(convKey, {
           conversationId: msg.conversationId,
           participantId,
-          participantUsername: participantUsername || 'User',
-          participantFullName: participantFullName || '',
-          participantRole: participantRole || (participantId === 'admin' ? 'master_admin' : 'teacher'),
+          participantUsername: participantUsername || "User",
+          participantFullName: participantFullName || "",
+          participantRole:
+            participantRole ||
+            (participantId === "admin" ? "master_admin" : "teacher"),
           lastMessage: msg.message,
           lastMessageAt: msg.createdAt,
           unreadCount: isUnread ? 1 : 0,
@@ -139,44 +149,62 @@ export async function getConversations(req: Request, res: Response) {
     // Enrich teacher participants with up-to-date phone number and full name if missing
     const teacherIdsToFetch: ObjectId[] = [];
     conversationMap.forEach((conv) => {
-      if (conv.participantId !== 'admin' && ObjectId.isValid(conv.participantId)) {
+      if (
+        conv.participantId !== "admin" &&
+        ObjectId.isValid(conv.participantId)
+      ) {
         teacherIdsToFetch.push(new ObjectId(conv.participantId));
       }
     });
 
     if (teacherIdsToFetch.length > 0) {
-      const usersData = await db.collection('users')
+      const usersData = await db
+        .collection("users")
         .find({ _id: { $in: teacherIdsToFetch } })
         .project({ username: 1, fullName: 1, phoneNumber: 1 })
         .toArray();
 
-      const userLookup = new Map<string, any>(usersData.map((u) => [u._id.toString(), u]));
+      const userLookup = new Map<string, any>(
+        usersData.map((u) => [u._id.toString(), u]),
+      );
       conversationMap.forEach((conv) => {
-        if (conv.participantId === 'admin') return;
+        if (conv.participantId === "admin") return;
         const found = userLookup.get(conv.participantId);
         if (found) {
           conv.participantUsername = found.username || conv.participantUsername;
           conv.participantFullName = found.fullName || conv.participantFullName;
-          conv.participantPhoneNumber = found.phoneNumber || '';
+          conv.participantPhoneNumber = found.phoneNumber || "";
         } else {
           // Account was deleted: append (deleted) to name and username if not already present
-          const curFull = conv.participantFullName || conv.participantUsername || 'Teacher';
-          conv.participantFullName = curFull.includes('(deleted)') ? curFull : `${curFull} (deleted)`;
-          conv.participantUsername = conv.participantUsername.includes('(deleted)') ? conv.participantUsername : `${conv.participantUsername} (deleted)`;
-          conv.participantPhoneNumber = '';
+          const curFull =
+            conv.participantFullName || conv.participantUsername || "Teacher";
+          conv.participantFullName = curFull.includes("(deleted)")
+            ? curFull
+            : `${curFull} (deleted)`;
+          conv.participantUsername = conv.participantUsername.includes(
+            "(deleted)",
+          )
+            ? conv.participantUsername
+            : `${conv.participantUsername} (deleted)`;
+          conv.participantPhoneNumber = "";
           (conv as any).isDeleted = true;
         }
       });
     }
 
     const conversations = Array.from(conversationMap.values()).sort((a, b) => {
-      return new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime();
+      return (
+        new Date(b.lastMessageAt).getTime() -
+        new Date(a.lastMessageAt).getTime()
+      );
     });
 
     return res.json({ success: true, data: conversations });
   } catch (err: any) {
-    console.error('Error fetching conversations:', err);
-    return res.status(500).json({ success: false, message: 'Failed to fetch conversations.' });
+    console.error("Error fetching conversations:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch conversations." });
   }
 }
 
@@ -187,25 +215,27 @@ export async function searchTeachers(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
-    const rawQuery = (req.query.q as string || '').trim();
+    const rawQuery = ((req.query.q as string) || "").trim();
     if (!rawQuery) {
       return res.json({ success: true, data: [] });
     }
 
     const db = getDatabase();
-    const cleanDigits = rawQuery.replace(/\D/g, '');
-    const cleanUsername = rawQuery.replace(/^@/, '').trim();
+    const cleanDigits = rawQuery.replace(/\D/g, "");
+    const cleanUsername = rawQuery.replace(/^@/, "").trim();
 
     const searchConditions: any[] = [];
 
     // Match username or full name
     if (cleanUsername) {
-      const escaped = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      searchConditions.push({ username: { $regex: escaped, $options: 'i' } });
-      searchConditions.push({ fullName: { $regex: escaped, $options: 'i' } });
+      const escaped = cleanUsername.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      searchConditions.push({ username: { $regex: escaped, $options: "i" } });
+      searchConditions.push({ fullName: { $regex: escaped, $options: "i" } });
     }
 
     // Match phone number
@@ -214,8 +244,8 @@ export async function searchTeachers(req: Request, res: Response) {
     }
 
     const queryFilter: any = {
-      role: 'teacher',
-      status: { $ne: 'suspended' },
+      role: "teacher",
+      status: { $ne: "suspended" },
       $or: searchConditions,
     };
 
@@ -224,7 +254,8 @@ export async function searchTeachers(req: Request, res: Response) {
       queryFilter._id = { $ne: new ObjectId(user.userId) };
     }
 
-    const teachers = await db.collection('users')
+    const teachers = await db
+      .collection("users")
       .find(queryFilter)
       .limit(10)
       .project({ username: 1, fullName: 1, phoneNumber: 1 })
@@ -233,18 +264,22 @@ export async function searchTeachers(req: Request, res: Response) {
     const results = teachers.map((t) => ({
       id: t._id.toString(),
       username: t.username,
-      fullName: t.fullName || '',
-      phoneNumber: t.phoneNumber || '',
+      fullName: t.fullName || "",
+      phoneNumber: t.phoneNumber || "",
     }));
 
     // If teacher searches and query matches 'admin', include Admin
     const isUserAdmin = isAdminRole(user.role);
-    if (!isUserAdmin && ('admin'.includes(cleanUsername.toLowerCase()) || cleanUsername.toLowerCase().includes('admin'))) {
+    if (
+      !isUserAdmin &&
+      ("admin".includes(cleanUsername.toLowerCase()) ||
+        cleanUsername.toLowerCase().includes("admin"))
+    ) {
       results.unshift({
-        id: 'admin',
-        username: 'admin',
-        fullName: 'Admin',
-        phoneNumber: '',
+        id: "admin",
+        username: "admin",
+        fullName: "Admin",
+        phoneNumber: "",
       });
     }
 
@@ -253,8 +288,10 @@ export async function searchTeachers(req: Request, res: Response) {
       data: results,
     });
   } catch (err: any) {
-    console.error('Error searching teachers:', err);
-    return res.status(500).json({ success: false, message: 'Failed to search teachers.' });
+    console.error("Error searching teachers:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to search teachers." });
   }
 }
 
@@ -265,12 +302,17 @@ export async function getThread(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
     const targetId = req.params.targetId;
     if (!targetId) {
-      return res.status(400).json({ success: false, message: 'Target participant ID is required.' });
+      return res.status(400).json({
+        success: false,
+        message: "Target participant ID is required.",
+      });
     }
 
     const db = getDatabase();
@@ -289,141 +331,182 @@ export async function getThread(req: Request, res: Response) {
     if (isAdmin) {
       // Target is teacherId
       if (!ObjectId.isValid(targetId)) {
-        return res.status(400).json({ success: false, message: 'Invalid teacher ID.' });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid teacher ID." });
       }
       conversationId = `admin:${targetId}`;
-      const teacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
+      const teacher = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(targetId) });
 
       if (teacher) {
         participant = {
           id: teacher._id.toString(),
           username: teacher.username,
-          fullName: teacher.fullName || '',
+          fullName: teacher.fullName || "",
           role: teacher.role,
-          phoneNumber: teacher.phoneNumber || '',
+          phoneNumber: teacher.phoneNumber || "",
           isDeleted: false,
         };
       } else {
         // Teacher account was deleted: find recorded name from conversation history
-        const prevMsg = await db.collection('messages').findOne({ conversationId });
-        const oldName = prevMsg?.senderId === targetId
-          ? (prevMsg.senderFullName || prevMsg.senderUsername)
-          : (prevMsg?.recipientFullName || prevMsg?.recipientUsername || 'Teacher');
-        const oldUser = prevMsg?.senderId === targetId ? prevMsg.senderUsername : (prevMsg?.recipientUsername || 'teacher');
+        const prevMsg = await db
+          .collection("messages")
+          .findOne({ conversationId });
+        const oldName =
+          prevMsg?.senderId === targetId
+            ? prevMsg.senderFullName || prevMsg.senderUsername
+            : prevMsg?.recipientFullName ||
+              prevMsg?.recipientUsername ||
+              "Teacher";
+        const oldUser =
+          prevMsg?.senderId === targetId
+            ? prevMsg.senderUsername
+            : prevMsg?.recipientUsername || "teacher";
 
         participant = {
           id: targetId,
-          username: oldUser.includes('(deleted)') ? oldUser : `${oldUser} (deleted)`,
-          fullName: oldName.includes('(deleted)') ? oldName : `${oldName} (deleted)`,
-          role: 'teacher',
-          phoneNumber: '',
+          username: oldUser.includes("(deleted)")
+            ? oldUser
+            : `${oldUser} (deleted)`,
+          fullName: oldName.includes("(deleted)")
+            ? oldName
+            : `${oldName} (deleted)`,
+          role: "teacher",
+          phoneNumber: "",
           isDeleted: true,
         };
       }
 
       // Mark incoming messages as read by admin
-      await db.collection('messages').updateMany(
+      await db.collection("messages").updateMany(
         {
           conversationId,
-          recipientRole: { $in: ['administrator', 'master_admin'] },
+          recipientRole: { $in: ["administrator", "master_admin"] },
           read: false,
+          [`hiddenFor.${user.userId}`]: { $ne: true },
         },
-        { $set: { read: true } }
+        { $set: { read: true } },
       );
     } else {
       // Current user is teacher
-      if (targetId === 'admin') {
+      if (targetId === "admin") {
         conversationId = `admin:${user.userId}`;
         participant = {
-          id: 'admin',
-          username: 'admin',
-          fullName: 'Admin',
-          role: 'master_admin',
+          id: "admin",
+          username: "admin",
+          fullName: "Admin",
+          role: "master_admin",
           isDeleted: false,
         };
 
         // Mark incoming messages as read by this teacher
-        await db.collection('messages').updateMany(
+        await db.collection("messages").updateMany(
           {
             conversationId,
             recipientId: user.userId,
             read: false,
+            [`hiddenFor.${user.userId}`]: { $ne: true },
           },
-          { $set: { read: true } }
+          { $set: { read: true } },
         );
       } else {
         // Target is another teacher
         if (!ObjectId.isValid(targetId)) {
-          return res.status(400).json({ success: false, message: 'Invalid teacher ID.' });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid teacher ID." });
         }
         if (targetId === user.userId) {
-          return res.status(400).json({ success: false, message: 'Cannot open chat with yourself.' });
+          return res.status(400).json({
+            success: false,
+            message: "Cannot open chat with yourself.",
+          });
         }
-        conversationId = `teacher:${[user.userId, targetId].sort().join(':')}`;
-        const otherTeacher = await db.collection('users').findOne({ _id: new ObjectId(targetId) });
+        conversationId = `teacher:${[user.userId, targetId].sort().join(":")}`;
+        const otherTeacher = await db
+          .collection("users")
+          .findOne({ _id: new ObjectId(targetId) });
 
         if (otherTeacher) {
           participant = {
             id: otherTeacher._id.toString(),
             username: otherTeacher.username,
-            fullName: otherTeacher.fullName || '',
+            fullName: otherTeacher.fullName || "",
             role: otherTeacher.role,
-            phoneNumber: otherTeacher.phoneNumber || '',
+            phoneNumber: otherTeacher.phoneNumber || "",
             isDeleted: false,
           };
         } else {
           // Other teacher was deleted: retrieve last known name from previous messages
-          const prevMsg = await db.collection('messages').findOne({ conversationId });
-          const oldName = prevMsg?.senderId === targetId
-            ? (prevMsg.senderFullName || prevMsg.senderUsername)
-            : (prevMsg?.recipientFullName || prevMsg?.recipientUsername || 'Teacher');
-          const oldUser = prevMsg?.senderId === targetId ? prevMsg.senderUsername : (prevMsg?.recipientUsername || 'teacher');
+          const prevMsg = await db
+            .collection("messages")
+            .findOne({ conversationId });
+          const oldName =
+            prevMsg?.senderId === targetId
+              ? prevMsg.senderFullName || prevMsg.senderUsername
+              : prevMsg?.recipientFullName ||
+                prevMsg?.recipientUsername ||
+                "Teacher";
+          const oldUser =
+            prevMsg?.senderId === targetId
+              ? prevMsg.senderUsername
+              : prevMsg?.recipientUsername || "teacher";
 
           participant = {
             id: targetId,
-            username: oldUser.includes('(deleted)') ? oldUser : `${oldUser} (deleted)`,
-            fullName: oldName.includes('(deleted)') ? oldName : `${oldName} (deleted)`,
-            role: 'teacher',
-            phoneNumber: '',
+            username: oldUser.includes("(deleted)")
+              ? oldUser
+              : `${oldUser} (deleted)`,
+            fullName: oldName.includes("(deleted)")
+              ? oldName
+              : `${oldName} (deleted)`,
+            role: "teacher",
+            phoneNumber: "",
             isDeleted: true,
           };
         }
 
         // Mark incoming messages from other teacher as read
-        await db.collection('messages').updateMany(
+        await db.collection("messages").updateMany(
           {
             conversationId,
             recipientId: user.userId,
             read: false,
+            [`hiddenFor.${user.userId}`]: { $ne: true },
           },
-          { $set: { read: true } }
+          { $set: { read: true } },
         );
       }
     }
 
     // Fetch messages in chronological order
-    const rawMessages = await db.collection('messages')
-      .find({ conversationId })
+    const rawMessages = await db
+      .collection("messages")
+      .find({ conversationId, [`hiddenFor.${user.userId}`]: { $ne: true } })
       .sort({ createdAt: 1 })
       .toArray();
 
     const formattedMessages = rawMessages.map((m) => {
-      const isMine = m.senderId === user.userId || (isAdmin && isAdminRole(m.senderRole));
+      const isMine =
+        m.senderId === user.userId || (isAdmin && isAdminRole(m.senderRole));
       return {
         id: m._id.toString(),
         conversationId: m.conversationId,
         senderId: m.senderId,
         senderUsername: m.senderUsername,
-        senderFullName: m.senderFullName || '',
+        senderFullName: m.senderFullName || "",
         senderRole: m.senderRole,
         recipientId: m.recipientId,
         recipientUsername: m.recipientUsername,
-        recipientFullName: m.recipientFullName || '',
+        recipientFullName: m.recipientFullName || "",
         recipientRole: m.recipientRole,
         message: m.message,
         read: !!m.read,
         createdAt: m.createdAt,
         isMine,
+        isUnsent: !!m.isUnsent,
       };
     });
 
@@ -436,8 +519,10 @@ export async function getThread(req: Request, res: Response) {
       },
     });
   } catch (err: any) {
-    console.error('Error fetching thread:', err);
-    return res.status(500).json({ success: false, message: 'Failed to load message thread.' });
+    console.error("Error fetching thread:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to load message thread." });
   }
 }
 
@@ -453,29 +538,42 @@ export async function sendMessage(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
     const { recipientId, message } = req.body;
-    if (!recipientId || typeof recipientId !== 'string') {
-      return res.status(400).json({ success: false, message: 'Recipient is required.' });
+    if (!recipientId || typeof recipientId !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Recipient is required." });
     }
 
-    if (!message || typeof message !== 'string') {
-      return res.status(400).json({ success: false, message: 'Message content is required.' });
+    if (!message || typeof message !== "string") {
+      return res
+        .status(400)
+        .json({ success: false, message: "Message content is required." });
     }
 
     const cleanMsg = message.trim();
     if (!cleanMsg) {
-      return res.status(400).json({ success: false, message: 'Message cannot be empty.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Message cannot be empty." });
     }
 
     if (cleanMsg.length > 300) {
-      return res.status(400).json({ success: false, message: 'Message cannot exceed 300 characters.' });
+      return res.status(400).json({
+        success: false,
+        message: "Message cannot exceed 300 characters.",
+      });
     }
 
     if (recipientId === user.userId) {
-      return res.status(400).json({ success: false, message: 'Cannot send message to yourself.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Cannot send message to yourself." });
     }
 
     const db = getDatabase();
@@ -483,83 +581,102 @@ export async function sendMessage(req: Request, res: Response) {
     const now = new Date().toISOString();
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
-    let recipientUsername = '';
-    let recipientFullName = '';
-    let recipientRole = 'teacher';
-    let conversationId = '';
+    let recipientUsername = "";
+    let recipientFullName = "";
+    let recipientRole = "teacher";
+    let conversationId = "";
 
     if (isAdmin) {
       // Admin to Teacher: Unlimited messages
       if (!ObjectId.isValid(recipientId)) {
-        return res.status(400).json({ success: false, message: 'Invalid teacher ID.' });
+        return res
+          .status(400)
+          .json({ success: false, message: "Invalid teacher ID." });
       }
-      const teacher = await db.collection('users').findOne({ _id: new ObjectId(recipientId) });
+      const teacher = await db
+        .collection("users")
+        .findOne({ _id: new ObjectId(recipientId) });
       if (!teacher) {
-        return res.status(400).json({ success: false, message: 'Cannot send message because this teacher account has been deleted.' });
+        return res.status(400).json({
+          success: false,
+          message:
+            "Cannot send message because this teacher account has been deleted.",
+        });
       }
       recipientUsername = teacher.username;
-      recipientFullName = teacher.fullName || '';
+      recipientFullName = teacher.fullName || "";
       recipientRole = teacher.role;
       conversationId = `admin:${recipientId}`;
     } else {
       // Current user is Teacher
-      if (recipientId === 'admin') {
+      if (recipientId === "admin") {
         // Teacher to Admin: Daily limit 30
-        const sentCount = await db.collection('messages').countDocuments({
+        const sentCount = await db.collection("messages").countDocuments({
           senderId: user.userId,
-          recipientRole: { $in: ['administrator', 'master_admin'] },
+          recipientRole: { $in: ["administrator", "master_admin"] },
           createdAt: { $gte: oneDayAgo },
         });
 
         if (sentCount >= 30) {
           return res.status(429).json({
             success: false,
-            message: 'Daily message limit reached. Please try again tomorrow.',
+            message: "Daily message limit reached. Please try again tomorrow.",
           });
         }
 
-        recipientUsername = 'admin';
-        recipientFullName = 'Admin';
-        recipientRole = 'master_admin';
+        recipientUsername = "admin";
+        recipientFullName = "Admin";
+        recipientRole = "master_admin";
         conversationId = `admin:${user.userId}`;
       } else {
         // Teacher to Teacher: Daily limit 30
         if (!ObjectId.isValid(recipientId)) {
-          return res.status(400).json({ success: false, message: 'Invalid recipient teacher ID.' });
+          return res
+            .status(400)
+            .json({ success: false, message: "Invalid recipient teacher ID." });
         }
-        const otherTeacher = await db.collection('users').findOne({ _id: new ObjectId(recipientId) });
+        const otherTeacher = await db
+          .collection("users")
+          .findOne({ _id: new ObjectId(recipientId) });
         if (!otherTeacher) {
-          return res.status(400).json({ success: false, message: 'Cannot send message because this teacher account has been deleted.' });
+          return res.status(400).json({
+            success: false,
+            message:
+              "Cannot send message because this teacher account has been deleted.",
+          });
         }
-        if (otherTeacher.status === 'suspended') {
-          return res.status(403).json({ success: false, message: 'Cannot message a suspended teacher account.' });
+        if (otherTeacher.status === "suspended") {
+          return res.status(403).json({
+            success: false,
+            message: "Cannot message a suspended teacher account.",
+          });
         }
 
-        const sentCount = await db.collection('messages').countDocuments({
+        const sentCount = await db.collection("messages").countDocuments({
           senderId: user.userId,
-          recipientRole: 'teacher',
+          recipientRole: "teacher",
           createdAt: { $gte: oneDayAgo },
         });
 
         if (sentCount >= 30) {
           return res.status(429).json({
             success: false,
-            message: 'Daily message limit reached. Please try again tomorrow.',
+            message: "Daily message limit reached. Please try again tomorrow.",
           });
         }
 
         recipientUsername = otherTeacher.username;
-        recipientFullName = otherTeacher.fullName || '';
+        recipientFullName = otherTeacher.fullName || "";
         recipientRole = otherTeacher.role;
-        conversationId = `teacher:${[user.userId, recipientId].sort().join(':')}`;
+        conversationId = `teacher:${[user.userId, recipientId].sort().join(":")}`;
       }
     }
 
     const newDoc = {
       conversationId,
-      senderId: isAdmin ? 'admin' : user.userId,
-      senderUsername: isAdmin ? 'admin' : user.username,
-      senderFullName: isAdmin ? 'Admin' : (user.fullName || ''),
+      senderId: user.userId,
+      senderUsername: isAdmin ? "admin" : user.username,
+      senderFullName: isAdmin ? "Admin" : user.fullName || "",
       senderRole: user.role,
       recipientId,
       recipientUsername,
@@ -570,7 +687,7 @@ export async function sendMessage(req: Request, res: Response) {
       createdAt: now,
     };
 
-    const insertResult = await db.collection('messages').insertOne(newDoc);
+    const insertResult = await db.collection("messages").insertOne(newDoc);
 
     return res.status(201).json({
       success: true,
@@ -581,8 +698,10 @@ export async function sendMessage(req: Request, res: Response) {
       },
     });
   } catch (err: any) {
-    console.error('Error sending message:', err);
-    return res.status(500).json({ success: false, message: 'Failed to send message.' });
+    console.error("Error sending message:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to send message." });
   }
 }
 
@@ -593,7 +712,9 @@ export async function getUnreadCount(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
     const db = getDatabase();
@@ -601,21 +722,25 @@ export async function getUnreadCount(req: Request, res: Response) {
 
     let count = 0;
     if (isAdmin) {
-      count = await db.collection('messages').countDocuments({
-        recipientRole: { $in: ['administrator', 'master_admin'] },
+      count = await db.collection("messages").countDocuments({
+        recipientRole: { $in: ["administrator", "master_admin"] },
         read: false,
+        [`hiddenFor.${user.userId}`]: { $ne: true },
       });
     } else {
-      count = await db.collection('messages').countDocuments({
+      count = await db.collection("messages").countDocuments({
         recipientId: user.userId,
         read: false,
+        [`hiddenFor.${user.userId}`]: { $ne: true },
       });
     }
 
     return res.json({ success: true, data: { unreadCount: count } });
   } catch (err: any) {
-    console.error('Error getting unread count:', err);
-    return res.status(500).json({ success: false, message: 'Failed to get unread count.' });
+    console.error("Error getting unread count:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to get unread count." });
   }
 }
 
@@ -626,7 +751,9 @@ export async function markThreadRead(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
 
     const targetId = req.params.targetId;
@@ -636,34 +763,38 @@ export async function markThreadRead(req: Request, res: Response) {
     let conversationId: string;
     if (isAdmin) {
       conversationId = `admin:${targetId}`;
-      await db.collection('messages').updateMany(
+      await db.collection("messages").updateMany(
         {
           conversationId,
-          recipientRole: { $in: ['administrator', 'master_admin'] },
+          recipientRole: { $in: ["administrator", "master_admin"] },
           read: false,
+          [`hiddenFor.${user.userId}`]: { $ne: true },
         },
-        { $set: { read: true } }
+        { $set: { read: true } },
       );
     } else {
-      if (targetId === 'admin') {
+      if (targetId === "admin") {
         conversationId = `admin:${user.userId}`;
       } else {
-        conversationId = `teacher:${[user.userId, targetId].sort().join(':')}`;
+        conversationId = `teacher:${[user.userId, targetId].sort().join(":")}`;
       }
-      await db.collection('messages').updateMany(
+      await db.collection("messages").updateMany(
         {
           conversationId,
           recipientId: user.userId,
           read: false,
+          [`hiddenFor.${user.userId}`]: { $ne: true },
         },
-        { $set: { read: true } }
+        { $set: { read: true } },
       );
     }
 
-    return res.json({ success: true, message: 'Thread marked as read.' });
+    return res.json({ success: true, message: "Thread marked as read." });
   } catch (err: any) {
-    console.error('Error marking thread as read:', err);
-    return res.status(500).json({ success: false, message: 'Failed to mark thread as read.' });
+    console.error("Error marking thread as read:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to mark thread as read." });
   }
 }
 
@@ -675,34 +806,44 @@ export async function broadcastMessage(req: Request, res: Response) {
   const { subject, content, message } = req.body;
   const text = content || message;
   if (!text) {
-    return res.status(400).json({ success: false, message: 'Message content is required.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Message content is required." });
   }
   try {
     const db = getDatabase();
-    const teachers = await db.collection('users').find({ role: 'teacher' }).toArray();
+    const teachers = await db
+      .collection("users")
+      .find({ role: "teacher" })
+      .toArray();
     const now = new Date().toISOString();
     const docs = teachers.map((t) => ({
       conversationId: `admin:${t._id.toString()}`,
-      senderId: req.user?.userId || 'admin',
-      senderUsername: req.user?.username || 'admin',
-      senderFullName: 'Administrator',
-      senderRole: req.user?.role || 'master_admin',
+      senderId: req.user?.userId || "admin",
+      senderUsername: req.user?.username || "admin",
+      senderFullName: "Administrator",
+      senderRole: req.user?.role || "master_admin",
       recipientId: t._id.toString(),
       recipientUsername: t.username,
-      recipientFullName: t.fullName || '',
-      recipientRole: 'teacher',
-      subject: subject || 'Announcement',
+      recipientFullName: t.fullName || "",
+      recipientRole: "teacher",
+      subject: subject || "Announcement",
       message: text.trim(),
       read: false,
       isBroadcast: true,
       createdAt: now,
     }));
     if (docs.length > 0) {
-      await db.collection('messages').insertMany(docs);
+      await db.collection("messages").insertMany(docs);
     }
-    return res.json({ success: true, message: `Broadcast sent to ${docs.length} teachers.` });
+    return res.json({
+      success: true,
+      message: `Broadcast sent to ${docs.length} teachers.`,
+    });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to broadcast message.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to broadcast message." });
   }
 }
 
@@ -711,15 +852,24 @@ export async function markSingleRead(req: Request, res: Response) {
   try {
     const db = getDatabase();
     if (!ObjectId.isValid(id)) {
-      return res.status(400).json({ success: false, message: 'Invalid message ID.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid message ID." });
     }
-    await db.collection('messages').updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { read: true, readAt: new Date().toISOString() } }
+    await db.collection("messages").updateOne(
+      {
+        _id: new ObjectId(id),
+        ...(isAdminRole(req.user?.role)
+          ? { recipientRole: { $in: ["administrator", "master_admin"] } }
+          : { recipientId: req.user!.userId }),
+      },
+      { $set: { read: true, readAt: new Date().toISOString() } },
     );
-    return res.json({ success: true, message: 'Message marked as read.' });
+    return res.json({ success: true, message: "Message marked as read." });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to mark message read.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to mark message read." });
   }
 }
 
@@ -730,39 +880,88 @@ export async function deleteMessage(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
     const { messageId } = req.params;
     if (!messageId || !ObjectId.isValid(messageId)) {
-      return res.status(400).json({ success: false, message: 'Invalid message ID.' });
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid message ID." });
     }
 
     const db = getDatabase();
-    const msg = await db.collection('messages').findOne({ _id: new ObjectId(messageId) });
+    const msg = await db
+      .collection("messages")
+      .findOne({ _id: new ObjectId(messageId) });
     if (!msg) {
-      return res.status(404).json({ success: false, message: 'Message not found or already deleted.' });
+      return res.status(404).json({
+        success: false,
+        message: "Message not found or already deleted.",
+      });
     }
 
     const isAdmin = isAdminRole(user.role);
-    const isSender = msg.senderId === user.userId || (isAdmin && isAdminRole(msg.senderRole));
-    const isRecipient = msg.recipientId === user.userId || (isAdmin && isAdminRole(msg.recipientRole));
+    const isSender =
+      msg.senderId === user.userId || (isAdmin && isAdminRole(msg.senderRole));
+    const isRecipient =
+      msg.recipientId === user.userId ||
+      (isAdmin && isAdminRole(msg.recipientRole));
 
-    if (!isAdmin && !isSender && !isRecipient) {
-      return res.status(403).json({ success: false, message: 'Permission denied. You can only delete messages in your own conversations.' });
+    if (!isSender && !isRecipient) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Permission denied. You can only delete messages in your own conversations.",
+      });
     }
 
-    // Delete message for everyone from the database
-    await db.collection('messages').deleteOne({ _id: new ObjectId(messageId) });
+    const scope = req.body?.scope || "me";
+    if (!["me", "everyone"].includes(scope))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid deletion option." });
+    if (scope === "everyone") {
+      if (!(
+        msg.senderId === user.userId ||
+        (msg.senderId === "admin" && isAdmin)
+      ))
+        return res.status(403).json({
+          success: false,
+          message: "You can only unsend your own messages.",
+        });
+      await db.collection("messages").updateOne(
+        { _id: new ObjectId(messageId) },
+        {
+          $set: {
+            message: "Message unsent",
+            isUnsent: true,
+            unsentAt: new Date().toISOString(),
+          },
+        },
+      );
+    } else {
+      await db
+        .collection("messages")
+        .updateOne(
+          { _id: new ObjectId(messageId) },
+          { $set: { [`hiddenFor.${user.userId}`]: true } },
+        );
+    }
 
     return res.json({
       success: true,
-      message: 'Message deleted for everyone.',
+      message:
+        scope === "everyone" ? "Message unsent." : "Message deleted for you.",
       deletedMessageId: messageId,
       conversationId: msg.conversationId,
     });
   } catch (err: any) {
-    console.error('Error deleting message:', err);
-    return res.status(500).json({ success: false, message: 'Failed to delete message.' });
+    console.error("Error deleting message:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to delete message." });
   }
 }
 
@@ -773,11 +972,16 @@ export async function deleteChat(req: Request, res: Response) {
   try {
     const user = req.user;
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Authentication required.' });
+      return res
+        .status(401)
+        .json({ success: false, message: "Authentication required." });
     }
     const { targetId } = req.params;
     if (!targetId) {
-      return res.status(400).json({ success: false, message: 'Target participant ID is required.' });
+      return res.status(400).json({
+        success: false,
+        message: "Target participant ID is required.",
+      });
     }
 
     const db = getDatabase();
@@ -787,25 +991,35 @@ export async function deleteChat(req: Request, res: Response) {
     if (isAdmin) {
       conversationId = `admin:${targetId}`;
     } else {
-      if (targetId === 'admin') {
+      if (targetId === "admin") {
         conversationId = `admin:${user.userId}`;
       } else {
-        conversationId = `teacher:${[user.userId, targetId].sort().join(':')}`;
+        conversationId = `teacher:${[user.userId, targetId].sort().join(":")}`;
       }
     }
 
-    const result = await db.collection('messages').deleteMany({ conversationId });
+    if (targetId !== "admin" && !ObjectId.isValid(targetId))
+      return res
+        .status(400)
+        .json({ success: false, message: "Invalid participant." });
+    const result = await db
+      .collection("messages")
+      .updateMany(
+        { conversationId },
+        { $set: { [`hiddenFor.${user.userId}`]: true } },
+      );
 
     return res.json({
       success: true,
-      message: 'Chat and all messages deleted successfully.',
-      deletedCount: result.deletedCount,
+      message:
+        "Chat deleted from your inbox. Other participants keep their copy.",
+      deletedCount: result.modifiedCount,
       conversationId,
     });
   } catch (err: any) {
-    console.error('Error deleting chat:', err);
-    return res.status(500).json({ success: false, message: 'Failed to delete chat.' });
+    console.error("Error deleting chat:", err);
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to delete chat." });
   }
 }
-
-

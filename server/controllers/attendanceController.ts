@@ -1,54 +1,76 @@
-import { Request, Response } from 'express';
-import { ObjectId } from 'mongodb';
-import { getDatabase } from '../db.ts';
-import { formatCell } from '../utils/csv.ts';
+import { Request, Response } from "express";
+import { ObjectId } from "mongodb";
+import { getDatabase } from "../db.ts";
+import { formatCell } from "../utils/csv.ts";
 
 export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
   const { sectionId } = req.params;
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(section.classId) });
     if (!classDoc || !classDoc.attendanceEnabled) {
       return res.status(400).json({
         success: false,
-        error: 'ATTENDANCE_DISABLED',
-        message: 'Attendance is currently turned OFF for this class.',
+        error: "ATTENDANCE_DISABLED",
+        message: "Attendance is currently turned OFF for this class.",
       });
     }
 
     // Find highest dayNumber recorded so far
-    const lastAttendance = await db.collection('attendance')
+    const lastAttendance = await db
+      .collection("attendance")
       .find({ sectionId })
       .sort({ dayNumber: -1 })
       .limit(1)
       .toArray();
 
-    const nextDayNumber = lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
+    const nextDayNumber =
+      lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
 
     // Get historical days (dayNumber, submissionDate, presentCount, absentCount)
-    const history = await db.collection('attendance')
+    const history = await db
+      .collection("attendance")
       .find({ sectionId })
       .sort({ dayNumber: -1 })
       .toArray();
 
     const formattedHistory = history.map((h) => {
       const records = h.records || [];
-      const presentCount = records.filter((r: any) => r.status === 'present').length;
-      const absentCount = records.filter((r: any) => r.status === 'absent').length;
+      const presentCount = records.filter(
+        (r: any) => r.status === "present",
+      ).length;
+      const absentCount = records.filter(
+        (r: any) => r.status === "absent",
+      ).length;
 
       return {
         id: h._id.toString(),
         dayNumber: h.dayNumber,
         submissionDate: h.submissionDate,
-        comment: h.comment || '',
+        comment: h.comment || "",
         presentCount,
         absentCount,
         totalStudents: records.length,
@@ -57,7 +79,9 @@ export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
       };
     });
 
-    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+    const today = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Kathmandu",
+    }).format(new Date());
 
     return res.json({
       success: true,
@@ -69,7 +93,12 @@ export async function getAttendanceMetaAndHistory(req: Request, res: Response) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
@@ -78,73 +107,161 @@ export async function submitDailyAttendance(req: Request, res: Response) {
   const { records, targetDayNumber, comment } = req.body;
 
   if (!records || !Array.isArray(records) || records.length === 0) {
-    return res.status(400).json({ success: false, message: 'Attendance records are required.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Attendance records are required." });
   }
 
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(section.classId) });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(section.classId) });
     if (!classDoc || !classDoc.attendanceEnabled) {
       return res.status(400).json({
         success: false,
-        message: 'Attendance is currently turned OFF for this class.',
+        message: "Attendance is currently turned OFF for this class.",
       });
     }
 
     // Load section's current students
-    const currentStudents = await db.collection('students').find({ sectionId }).toArray();
-    const currentStudentIdSet = new Set(currentStudents.map((s) => s._id.toString()));
+    const currentStudents = await db
+      .collection("students")
+      .find({ sectionId })
+      .toArray();
+    const currentStudentIdSet = new Set(
+      currentStudents.map((s) => s._id.toString()),
+    );
 
     if (records.length !== currentStudents.length) {
-      return res.status(400).json({ success: false, message: 'Roster changed. Please close and reopen attendance.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Roster changed. Please close and reopen attendance.",
+        });
     }
 
     const seenStudentIds = new Set<string>();
     for (const r of records) {
-      const sid = typeof r.studentId === 'string' ? r.studentId : r.studentId?.toString();
-      if (!sid || !currentStudentIdSet.has(sid) || seenStudentIds.has(sid)) {
-        return res.status(400).json({ success: false, message: 'Roster changed. Please close and reopen attendance.' });
+      const sid =
+        typeof r?.studentId === "string"
+          ? r.studentId
+          : r?.studentId?.toString();
+      if (
+        !sid ||
+        !currentStudentIdSet.has(sid) ||
+        seenStudentIds.has(sid) ||
+        !["present", "absent"].includes(r.status)
+      ) {
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Roster changed. Please close and reopen attendance.",
+          });
       }
       seenStudentIds.add(sid);
     }
 
     if (seenStudentIds.size !== currentStudentIdSet.size) {
-      return res.status(400).json({ success: false, message: 'Roster changed. Please close and reopen attendance.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Roster changed. Please close and reopen attendance.",
+        });
     }
 
     // Determine target day: user custom dayNumber or auto-sequential next day
     let dayNumber: number;
     const parsedTarget = Number(targetDayNumber);
+    if (
+      targetDayNumber !== undefined &&
+      (!Number.isSafeInteger(parsedTarget) ||
+        parsedTarget < 1 ||
+        parsedTarget > 100000)
+    ) {
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Day number must be a whole number between 1 and 100,000.",
+        });
+    }
     if (!isNaN(parsedTarget) && parsedTarget >= 1) {
       dayNumber = Math.floor(parsedTarget);
     } else {
-      const lastAttendance = await db.collection('attendance')
+      const lastAttendance = await db
+        .collection("attendance")
         .find({ sectionId })
         .sort({ dayNumber: -1 })
         .limit(1)
         .toArray();
-      dayNumber = lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
+      dayNumber =
+        lastAttendance.length > 0 ? lastAttendance[0].dayNumber + 1 : 1;
     }
 
     // Stamp calendar date YYYY-MM-DD in Asia/Kathmandu
-    const submissionDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kathmandu' }).format(new Date());
+    const submissionDate =
+      req.body.submissionDate ||
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kathmandu" }).format(
+        new Date(),
+      );
+    if (
+      typeof submissionDate !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(submissionDate) ||
+      Number.isNaN(Date.parse(submissionDate)) ||
+      new Date(submissionDate).toISOString().slice(0, 10) !== submissionDate
+    )
+      return res
+        .status(400)
+        .json({ success: false, message: "Choose a valid attendance date." });
     const now = new Date().toISOString();
-    const trimmedComment = typeof comment === 'string' ? comment.trim() : '';
+    const trimmedComment = typeof comment === "string" ? comment.trim() : "";
+    if (trimmedComment.length > 1000)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Keep attendance notes under 1,000 characters.",
+        });
 
     const validRecords = records.map((r: any) => ({
       studentId: r.studentId,
-      status: r.status === 'absent' ? 'absent' : 'present',
+      status: r.status === "absent" ? "absent" : "present",
     }));
 
     // Atomic upsert for this day record
     const filter = { sectionId, dayNumber };
+    const existing = await db.collection("attendance").findOne(filter);
+    if (existing && existing.submissionDate !== submissionDate)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "The original date of an attendance day cannot be changed.",
+        });
     const updateDoc: any = {
       $set: {
         teacherId: section.teacherId,
@@ -159,37 +276,53 @@ export async function submitDailyAttendance(req: Request, res: Response) {
         createdAt: now,
       },
     };
-    if (trimmedComment) {
+    if (typeof comment === "string") {
       updateDoc.$set.comment = trimmedComment;
     }
 
-    const result = await db.collection('attendance').findOneAndUpdate(
-      filter,
-      updateDoc,
-      { upsert: true, returnDocument: 'after' }
-    );
+    const result = await db
+      .collection("attendance")
+      .findOneAndUpdate(filter, updateDoc, {
+        upsert: true,
+        returnDocument: "after",
+      });
 
     const doc = result;
-    const isUpdated = Boolean(doc?.lastModifiedAt && doc?.createdAt && doc.lastModifiedAt !== doc.createdAt);
+    const isUpdated = Boolean(
+      doc?.lastModifiedAt &&
+      doc?.createdAt &&
+      doc.lastModifiedAt !== doc.createdAt,
+    );
 
     return res.status(isUpdated ? 200 : 201).json({
       success: true,
       data: {
-        id: doc?._id?.toString() || '',
+        id: doc?._id?.toString() || "",
         dayNumber,
         submissionDate,
         comment: doc?.comment || trimmedComment,
         recordsCount: validRecords.length,
         updated: isUpdated,
       },
-      message: `Attendance for Day ${dayNumber} ${isUpdated ? 'updated' : 'saved'} successfully.`,
+      message: `Attendance for Day ${dayNumber} ${isUpdated ? "updated" : "saved"} successfully.`,
     });
   } catch (err: any) {
     if (err?.code === 11000) {
-      return res.status(409).json({ success: false, message: 'Day already recorded from another device. Reload and try again.' });
+      return res
+        .status(409)
+        .json({
+          success: false,
+          message:
+            "Day already recorded from another device. Reload and try again.",
+        });
     }
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
@@ -197,17 +330,32 @@ export async function getHistoricalDay(req: Request, res: Response) {
   const { attendanceId } = req.params;
 
   if (!attendanceId || !ObjectId.isValid(attendanceId)) {
-    return res.status(400).json({ success: false, message: 'Invalid Attendance ID.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid Attendance ID." });
   }
 
   try {
     const db = getDatabase();
-    const attendance = await db.collection('attendance').findOne({ _id: new ObjectId(attendanceId) });
-    if (!attendance) return res.status(404).json({ success: false, message: 'Attendance record not found.' });
+    const attendance = await db
+      .collection("attendance")
+      .findOne({ _id: new ObjectId(attendanceId) });
+    if (!attendance)
+      return res
+        .status(404)
+        .json({ success: false, message: "Attendance record not found." });
 
     // Verify ownership
-    if (attendance.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'You do not have permission to view this attendance.' });
+    if (
+      attendance.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "You do not have permission to view this attendance.",
+        });
     }
 
     return res.json({
@@ -219,7 +367,7 @@ export async function getHistoricalDay(req: Request, res: Response) {
         sectionId: attendance.sectionId,
         dayNumber: attendance.dayNumber,
         submissionDate: attendance.submissionDate,
-        comment: attendance.comment || '',
+        comment: attendance.comment || "",
         records: attendance.records,
         lastModifiedAt: attendance.lastModifiedAt,
         createdAt: attendance.createdAt,
@@ -227,7 +375,12 @@ export async function getHistoricalDay(req: Request, res: Response) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
@@ -236,70 +389,118 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
   const { records, comment } = req.body;
 
   if (!attendanceId || !ObjectId.isValid(attendanceId)) {
-    return res.status(400).json({ success: false, message: 'Invalid Attendance ID.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Invalid Attendance ID." });
   }
 
   if (!records || !Array.isArray(records)) {
-    return res.status(400).json({ success: false, message: 'Attendance records are required.' });
+    return res
+      .status(400)
+      .json({ success: false, message: "Attendance records are required." });
   }
 
   try {
     const db = getDatabase();
-    const attendance = await db.collection('attendance').findOne({ _id: new ObjectId(attendanceId) });
-    if (!attendance) return res.status(404).json({ success: false, message: 'Attendance record not found.' });
+    const attendance = await db
+      .collection("attendance")
+      .findOne({ _id: new ObjectId(attendanceId) });
+    if (!attendance)
+      return res
+        .status(404)
+        .json({ success: false, message: "Attendance record not found." });
 
     // Verify ownership
-    if (attendance.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'You do not have permission to edit this attendance.' });
+    if (
+      attendance.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "You do not have permission to edit this attendance.",
+        });
     }
 
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(attendance.classId) });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(attendance.classId) });
     if (!classDoc || !classDoc.attendanceEnabled) {
       return res.status(400).json({
         success: false,
-        error: 'ATTENDANCE_DISABLED',
-        message: 'Attendance is currently turned OFF for this class.',
+        error: "ATTENDANCE_DISABLED",
+        message: "Attendance is currently turned OFF for this class.",
       });
     }
 
     const now = new Date().toISOString();
     const existingRecords = attendance.records || [];
-    const existingStudentIds = new Set(existingRecords.map((r: any) => r.studentId));
+    const existingStudentIds = new Set(
+      existingRecords.map((r: any) => r.studentId),
+    );
 
     // Fetch current students in section to merge or allow currently enrolled students as well
-    const currentStudents = await db.collection('students').find({ sectionId: attendance.sectionId }).toArray();
+    const currentStudents = await db
+      .collection("students")
+      .find({ sectionId: attendance.sectionId })
+      .toArray();
     const allowedStudentIds = new Set([
       ...existingStudentIds,
       ...currentStudents.map((s) => s._id.toString()),
     ]);
 
     const seenStudentIds = new Set<string>();
-    const validRecords: Array<{ studentId: string; status: 'present' | 'absent' }> = [];
+    const validRecords: Array<{
+      studentId: string;
+      status: "present" | "absent";
+    }> = [];
 
     for (const r of records) {
-      const sid = typeof r.studentId === 'string' ? r.studentId : r.studentId?.toString();
+      const sid =
+        typeof r?.studentId === "string"
+          ? r.studentId
+          : r?.studentId?.toString();
       if (sid && allowedStudentIds.has(sid) && !seenStudentIds.has(sid)) {
         seenStudentIds.add(sid);
         validRecords.push({
           studentId: sid,
-          status: r.status === 'absent' ? 'absent' : 'present',
+          status: r.status === "absent" ? "absent" : "present",
         });
       }
     }
 
+    if (
+      validRecords.length !== records.length ||
+      records.some((r: any) => !["present", "absent"].includes(r?.status)) ||
+      [...existingStudentIds].some((id) => !seenStudentIds.has(String(id)))
+    )
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message:
+            "Include each student in this attendance record once with a valid status.",
+        });
     const updateDoc: Record<string, any> = {
       records: validRecords,
       lastModifiedAt: now,
     };
-    if (typeof comment === 'string') {
+    if (typeof comment === "string" && comment.trim().length > 1000)
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Keep attendance notes under 1,000 characters.",
+        });
+    if (typeof comment === "string") {
       updateDoc.comment = comment.trim();
     }
 
     // Update records, comment, and lastModifiedAt, while PRESERVING dayNumber and original submissionDate
-    await db.collection('attendance').updateOne(
-      { _id: new ObjectId(attendanceId) },
-      { $set: updateDoc }
-    );
+    await db
+      .collection("attendance")
+      .updateOne({ _id: new ObjectId(attendanceId) }, { $set: updateDoc });
 
     return res.json({
       success: true,
@@ -307,7 +508,12 @@ export async function updateHistoricalAttendance(req: Request, res: Response) {
     });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Something went wrong. Please try again.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Something went wrong. Please try again.",
+      });
   }
 }
 
@@ -317,15 +523,29 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
 
   try {
     const db = getDatabase();
-    const classDoc = await db.collection('classes').findOne({ _id: new ObjectId(classId) });
-    if (!classDoc) return res.status(404).json({ success: false, message: 'Class not found.' });
+    const classDoc = await db
+      .collection("classes")
+      .findOne({ _id: new ObjectId(classId) });
+    if (!classDoc)
+      return res
+        .status(404)
+        .json({ success: false, message: "Class not found." });
 
-    if (classDoc.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this class.' });
+    if (
+      classDoc.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this class.",
+        });
     }
 
     // Find sections
-    const sections = await db.collection('sections')
+    const sections = await db
+      .collection("sections")
       .find({ classId })
       .sort({ order: 1, name: 1 })
       .toArray();
@@ -334,16 +554,26 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
     const sectionOrderMap = new Map<string, number>();
     sections.forEach((s, idx) => {
       sectionMap.set(s._id.toString(), s.name);
-      sectionOrderMap.set(s._id.toString(), s.order !== undefined ? s.order : idx);
+      sectionOrderMap.set(
+        s._id.toString(),
+        s.order !== undefined ? s.order : idx,
+      );
     });
 
-    const isSpecificSection = !!(sectionIdQuery && sectionIdQuery !== 'combined' && ObjectId.isValid(sectionIdQuery));
+    const isSpecificSection = !!(
+      sectionIdQuery &&
+      sectionIdQuery !== "combined" &&
+      ObjectId.isValid(sectionIdQuery)
+    );
     const studentQuery: any = { classId };
     if (isSpecificSection) {
       studentQuery.sectionId = sectionIdQuery;
     }
 
-    const students = await db.collection('students').find(studentQuery).toArray();
+    const students = await db
+      .collection("students")
+      .find(studentQuery)
+      .toArray();
 
     // Sort according to section, then by rollNumber
     students.sort((a, b) => {
@@ -351,8 +581,8 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
       const orderB = sectionOrderMap.get(b.sectionId) ?? 999;
       if (orderA !== orderB) return orderA - orderB;
 
-      const nameA = sectionMap.get(a.sectionId) || '';
-      const nameB = sectionMap.get(b.sectionId) || '';
+      const nameA = sectionMap.get(a.sectionId) || "";
+      const nameB = sectionMap.get(b.sectionId) || "";
       const nameComp = nameA.localeCompare(nameB);
       if (nameComp !== 0) return nameComp;
 
@@ -368,7 +598,10 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
       attendanceQuery.$or = [{ sectionId: sectionIdQuery }];
     }
 
-    const attendanceDocs = await db.collection('attendance').find(attendanceQuery).toArray();
+    const attendanceDocs = await db
+      .collection("attendance")
+      .find(attendanceQuery)
+      .toArray();
 
     // Find highest day number recorded
     let maxRecordedDay = 0;
@@ -392,26 +625,26 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
     // Build CSV strictly following required format with anti-formula injection
     const rows: string[] = [];
     // Row 1: Class Name = <ClassName>
-    rows.push(formatCell(`Class Name = ${classDoc.name || ''}`));
+    rows.push(formatCell(`Class Name = ${classDoc.name || ""}`));
 
     // Row 2: Headers
-    const headers = ['Roll no', 'Symbol No', 'NAME', 'Section'];
+    const headers = ["Roll no", "Symbol No", "NAME", "Section"];
     for (let i = 1; i <= totalDays; i++) {
       headers.push(String(i));
     }
-    headers.push('Total');
-    rows.push(headers.map(formatCell).join(','));
+    headers.push("Total");
+    rows.push(headers.map(formatCell).join(","));
 
     // Rows 3+: Students
     students.forEach((s) => {
       const sId = s._id.toString();
-      const secName = sectionMap.get(s.sectionId) || '';
+      const secName = sectionMap.get(s.sectionId) || "";
       let totalPresent = 0;
       const dayValues: number[] = [];
 
       for (let d = 1; d <= totalDays; d++) {
         const status = statusMap.get(`${sId}_${d}`);
-        if (status === 'present') {
+        if (status === "present") {
           dayValues.push(1);
           totalPresent++;
         } else {
@@ -421,38 +654,61 @@ export async function downloadAttendanceCsv(req: Request, res: Response) {
 
       const row = [
         formatCell(s.rollNumber),
-        formatCell(s.symbolNumber || ''),
-        formatCell(s.studentName || ''),
+        formatCell(s.symbolNumber || ""),
+        formatCell(s.studentName || ""),
         formatCell(secName),
         ...dayValues.map(formatCell),
         formatCell(totalPresent),
       ];
-      rows.push(row.join(','));
+      rows.push(row.join(","));
     });
 
-    const csvContent = '\uFEFF' + rows.join('\r\n');
-    const safeName = (classDoc.name || 'Class').replace(/[^a-zA-Z0-9_\-]/g, '_');
-    const secSuffix = isSpecificSection ? `_${(sectionMap.get(sectionIdQuery!) || 'Section').replace(/[^a-zA-Z0-9_\-]/g, '_')}` : '_Combined';
+    const csvContent = "\uFEFF" + rows.join("\r\n");
+    const safeName = (classDoc.name || "Class").replace(
+      /[^a-zA-Z0-9_\-]/g,
+      "_",
+    );
+    const secSuffix = isSpecificSection
+      ? `_${(sectionMap.get(sectionIdQuery!) || "Section").replace(/[^a-zA-Z0-9_\-]/g, "_")}`
+      : "_Combined";
     const filename = `${safeName}${secSuffix}_Attendance.csv`;
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.status(200).send(csvContent);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to download attendance CSV.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to download attendance CSV." });
   }
 }
 
-export async function downloadSectionAttendanceCsv(req: Request, res: Response) {
+export async function downloadSectionAttendanceCsv(
+  req: Request,
+  res: Response,
+) {
   const { sectionId } = req.params;
   try {
     const db = getDatabase();
-    const section = await db.collection('sections').findOne({ _id: new ObjectId(sectionId) });
-    if (!section) return res.status(404).json({ success: false, message: 'Section not found.' });
+    const section = await db
+      .collection("sections")
+      .findOne({ _id: new ObjectId(sectionId) });
+    if (!section)
+      return res
+        .status(404)
+        .json({ success: false, message: "Section not found." });
 
-    if (section.teacherId.toString() !== req.user!.userId && req.user!.role === 'teacher') {
-      return res.status(403).json({ success: false, message: 'Unauthorized: You do not own this section.' });
+    if (
+      section.teacherId.toString() !== req.user!.userId &&
+      req.user!.role === "teacher"
+    ) {
+      return res
+        .status(403)
+        .json({
+          success: false,
+          message: "Unauthorized: You do not own this section.",
+        });
     }
 
     req.params.classId = section.classId;
@@ -460,7 +716,9 @@ export async function downloadSectionAttendanceCsv(req: Request, res: Response) 
     return downloadAttendanceCsv(req, res);
   } catch (err) {
     console.error(err);
-    return res.status(500).json({ success: false, message: 'Failed to download attendance CSV.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to download attendance CSV." });
   }
 }
 
@@ -468,13 +726,17 @@ export async function getByClassDate(req: Request, res: Response) {
   const { classId, date } = req.query;
   try {
     const db = getDatabase();
-    const query: any = req.user!.role === 'teacher' ? { teacherId: req.user!.userId } : {};
+    const query: any =
+      req.user!.role === "teacher" ? { teacherId: req.user!.userId } : {};
     if (classId) query.classId = classId;
     if (date) {
-      if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.status(400).json({ success: false, message: 'Use YYYY-MM-DD for the date.' });
+      if (typeof date !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(date))
+        return res
+          .status(400)
+          .json({ success: false, message: "Use YYYY-MM-DD for the date." });
       query.submissionDate = date;
     }
-    const records = await db.collection('attendance').find(query).toArray();
+    const records = await db.collection("attendance").find(query).toArray();
     return res.json({
       success: true,
       data: records.map((r) => ({
@@ -488,7 +750,9 @@ export async function getByClassDate(req: Request, res: Response) {
       })),
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to fetch attendance.' });
+    return res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch attendance." });
   }
 }
 
@@ -501,13 +765,18 @@ export async function getStudentSummary(req: Request, res: Response) {
   const { studentId } = req.params;
   try {
     const db = getDatabase();
-    const attendance = await db.collection('attendance').find(req.user!.role === 'teacher' ? { teacherId: req.user!.userId } : {}).toArray();
+    const attendance = await db
+      .collection("attendance")
+      .find(req.user!.role === "teacher" ? { teacherId: req.user!.userId } : {})
+      .toArray();
     let present = 0;
     let absent = 0;
     attendance.forEach((att) => {
-      const rec = (att.records || []).find((r: any) => String(r.studentId) === String(studentId));
-      if (rec?.status === 'present') present++;
-      if (rec?.status === 'absent') absent++;
+      const rec = (att.records || []).find(
+        (r: any) => String(r.studentId) === String(studentId),
+      );
+      if (rec?.status === "present") present++;
+      if (rec?.status === "absent") absent++;
     });
     return res.json({
       success: true,
@@ -516,10 +785,18 @@ export async function getStudentSummary(req: Request, res: Response) {
         total: present + absent,
         present,
         absent,
-        percentage: present + absent > 0 ? Math.round((present / (present + absent)) * 100) : 0,
+        percentage:
+          present + absent > 0
+            ? Math.round((present / (present + absent)) * 100)
+            : 0,
       },
     });
   } catch (err) {
-    return res.status(500).json({ success: false, message: 'Failed to retrieve attendance summary.' });
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to retrieve attendance summary.",
+      });
   }
 }

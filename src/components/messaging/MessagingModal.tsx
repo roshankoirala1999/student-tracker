@@ -1,21 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from "react-dom";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  ArrowLeft,
+  Check,
+  CheckCheck,
   MessageSquare,
   Search,
   Send,
-  X,
-  ArrowLeft,
-  User,
-  Clock,
-  Phone,
-  AlertCircle,
-  RefreshCw,
-  CheckCircle2,
   Trash2,
-} from 'lucide-react';
-import { apiRequest } from '../../api/client.ts';
-import { ConversationItem, ChatMessage, TeacherSearchItem, UserProfile } from '../../types/index.ts';
-
+  X,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
+import { apiRequest } from "../../api/client.ts";
+import {
+  ConversationItem,
+  ChatMessage,
+  TeacherSearchItem,
+  UserProfile,
+} from "../../types/index.ts";
 interface Props {
   isOpen: boolean;
   onClose: () => void;
@@ -27,984 +30,615 @@ interface Props {
     phoneNumber?: string;
   } | null;
 }
-
-export const MessagingModal: React.FC<Props> = ({
+interface Participant {
+  id: string;
+  username: string;
+  fullName: string;
+  role: string;
+  isDeleted?: boolean;
+}
+export function MessagingModal({
   isOpen,
   onClose,
   currentUser,
   initialTargetTeacher,
-}) => {
-  const isAdmin = currentUser.role === 'master_admin' || currentUser.role === 'administrator';
-
-  // Conversations list state
-  const [conversations, setConversations] = useState<ConversationItem[]>([]);
-  const [loadingConversations, setLoadingConversations] = useState(false);
-
-  // Active chat state
-  const [selectedParticipantId, setSelectedParticipantId] = useState<string | null>(null);
-  const [activeParticipant, setActiveParticipant] = useState<{
-    id: string;
-    username: string;
-    fullName: string;
-    role: string;
-    phoneNumber?: string;
-    isDeleted?: boolean;
-  } | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [loadingThread, setLoadingThread] = useState(false);
-
-  // Delete message / chat states
-  const [messageToDelete, setMessageToDelete] = useState<string | null>(null);
-  const [deletingMessage, setDeletingMessage] = useState(false);
-  const [confirmDeleteChat, setConfirmDeleteChat] = useState<string | null>(null);
-  const [deletingChat, setDeletingChat] = useState(false);
-
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<TeacherSearchItem[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
-
-  // Message compose state
-  const [inputMessage, setInputMessage] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
-
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const searchTimeoutRef = useRef<any>(null);
-
-  // Auto scroll to bottom of chat
-  const scrollToBottom = (smooth = true) => {
-    messagesEndRef.current?.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto' });
-  };
-
-  // Load conversations list
-  const fetchConversations = async () => {
-    try {
-      const res = await apiRequest<ConversationItem[]>('/api/messages/conversations');
-      if (res.success && res.data) {
-        setConversations(res.data);
-      }
-    } catch (err) {
-      console.error('Failed to load conversations:', err);
-    }
-  };
-
-  // Load thread messages
-  const fetchThread = async (targetId: string, background = false) => {
-    if (!background) setLoadingThread(true);
-    setSendError(null);
-    try {
+}: Props) {
+  const [conversations, setConversations] = useState<ConversationItem[]>([]),
+    [target, setTarget] = useState<string | null>(null),
+    [participant, setParticipant] = useState<Participant | null>(null),
+    [messages, setMessages] = useState<ChatMessage[]>([]),
+    [query, setQuery] = useState(""),
+    [results, setResults] = useState<TeacherSearchItem[]>([]),
+    [drafts, setDrafts] = useState<Record<string, string>>({}),
+    [threadSearch, setThreadSearch] = useState(""),
+    [loading, setLoading] = useState(false),
+    [searching, setSearching] = useState(false),
+    [sending, setSending] = useState(false),
+    [error, setError] = useState(""),
+    [action, setAction] = useState<{
+      type: "message" | "chat";
+      message?: ChatMessage;
+    } | null>(null),
+    [deleting, setDeleting] = useState(false);
+  const selected = useRef<string | null>(null),
+    scrollRef = useRef<HTMLDivElement>(null),
+    nearBottom = useRef(true),
+    sendLock = useRef(false),
+    lastId = useRef(""),
+    mutation = useRef(0);
+  const isAdmin = ["master_admin", "administrator"].includes(currentUser.role);
+  const draft = target ? drafts[target] || "" : "";
+  async function loadConversations() {
+    const res = await apiRequest<ConversationItem[]>(
+      "/api/messages/conversations",
+    );
+    if (res.success) setConversations(res.data || []);
+    else setError(res.message || "Unable to load conversations.");
+  }
+  function choose(id: string) {
+    selected.current = id;
+    setTarget(id);
+    setParticipant(null);
+    setMessages([]);
+    setQuery("");
+    setResults([]);
+    setThreadSearch("");
+    setError("");
+    lastId.current = "";
+    nearBottom.current = true;
+  }
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadConversations();
+    if (initialTargetTeacher) choose(initialTargetTeacher.id);
+    const timer = setInterval(() => {
+      if (!document.hidden) void loadConversations();
+    }, 7000);
+    return () => clearInterval(timer);
+  }, [isOpen, initialTargetTeacher?.id]);
+  useEffect(() => {
+    if (!isOpen || !target) return;
+    let cancelled = false,
+      inFlight = false;
+    setLoading(true);
+    const fetchThread = async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const version = mutation.current;
       const res = await apiRequest<{
-        conversationId: string;
-        participant: {
-          id: string;
-          username: string;
-          fullName: string;
-          role: string;
-          phoneNumber?: string;
-        };
+        participant: Participant;
         messages: ChatMessage[];
-      }>(`/api/messages/thread/${targetId}`);
-
-      if (res.success && res.data) {
-        setActiveParticipant(res.data.participant);
-        setMessages(res.data.messages);
-        // Refresh conversations to keep unread badges updated
-        fetchConversations();
+      }>(`/api/messages/thread/${target}`);
+      inFlight = false;
+      if (cancelled || version !== mutation.current) return;
+      setLoading(false);
+      if (!res.success) {
+        setError(res.message || "Unable to load messages.");
+        return;
       }
-    } catch (err) {
-      console.error('Failed to load thread:', err);
-    } finally {
-      if (!background) setLoadingThread(false);
-    }
-  };
-
-  // Select participant and open chat
-  const handleSelectParticipant = (targetId: string, fallbackInfo?: Partial<TeacherSearchItem>) => {
-    setSelectedParticipantId(targetId);
-    if (fallbackInfo) {
-      setActiveParticipant({
-        id: targetId,
-        username: fallbackInfo.username || (targetId === 'admin' ? 'admin' : 'User'),
-        fullName: fallbackInfo.fullName || (targetId === 'admin' ? 'Admin' : ''),
-        role: targetId === 'admin' ? 'master_admin' : 'teacher',
-        phoneNumber: fallbackInfo.phoneNumber || '',
-      });
-    } else if (targetId === 'admin') {
-      setActiveParticipant({
-        id: 'admin',
-        username: 'admin',
-        fullName: 'Admin',
-        role: 'master_admin',
-      });
-    }
-    fetchThread(targetId);
-    // Clear search query
-    setSearchQuery('');
-    setSearchResults([]);
-    setHasSearched(false);
-  };
-
-  // Handle single search bar for teacher by username or 10-digit phone number
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value;
-    setSearchQuery(val);
-    setSendError(null);
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    if (!val.trim()) {
-      setSearchResults([]);
-      setIsSearching(false);
-      setHasSearched(false);
-      return;
-    }
-
-    setIsSearching(true);
-    searchTimeoutRef.current = setTimeout(async () => {
-      try {
-        const res = await apiRequest<TeacherSearchItem[]>(
-          `/api/messages/search-teachers?q=${encodeURIComponent(val.trim())}`
-        );
-        setIsSearching(false);
-        setHasSearched(true);
-        if (res.success && res.data) {
-          setSearchResults(res.data);
-        } else {
-          setSearchResults([]);
-        }
-      } catch {
-        setIsSearching(false);
-        setHasSearched(true);
-        setSearchResults([]);
-      }
-    }, 300);
-  };
-
-  // Handle Enter key on search bar to instantly open chatbot
-  const handleSearchKeyDown = async (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key !== 'Enter') return;
-    e.preventDefault();
-
-    const query = searchQuery.trim();
-    if (!query) return;
-
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-
-    // If query matches admin (for teacher)
-    if (!isAdmin && ('admin'.includes(query.toLowerCase()) || query.toLowerCase().includes('admin'))) {
-      handleSelectParticipant('admin', {
-        id: 'admin',
-        username: 'admin',
-        fullName: 'Admin',
-        role: 'master_admin',
-      });
-      return;
-    }
-
-    // If search results already loaded, select the first match
-    if (searchResults.length > 0) {
-      handleSelectParticipant(searchResults[0].id, searchResults[0]);
-      return;
-    }
-
-    // Perform immediate search and select top result
-    setIsSearching(true);
-    try {
-      const res = await apiRequest<TeacherSearchItem[]>(
-        `/api/messages/search-teachers?q=${encodeURIComponent(query)}`
+      setParticipant(res.data!.participant);
+      setMessages(res.data!.messages);
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.participantId === target ? { ...c, unreadCount: 0 } : c,
+        ),
       );
-      setIsSearching(false);
-      setHasSearched(true);
-      if (res.success && res.data && res.data.length > 0) {
-        setSearchResults(res.data);
-        handleSelectParticipant(res.data[0].id, res.data[0]);
-      } else {
-        setSearchResults([]);
-      }
-    } catch {
-      setIsSearching(false);
-      setHasSearched(true);
-    }
-  };
-
-  // Send message
-  const handleSendMessage = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!selectedParticipantId || !inputMessage.trim() || sending) return;
-
-    const trimmedMsg = inputMessage.trim();
-    if (trimmedMsg.length > 300) {
-      setSendError('Message cannot exceed 300 characters.');
+    };
+    void fetchThread();
+    const timer = setInterval(() => {
+      if (!document.hidden) void fetchThread();
+    }, 4000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isOpen, target]);
+  useEffect(() => {
+    if (!isOpen) return;
+    const q = query.trim();
+    if (!q) {
+      setResults([]);
+      setSearching(false);
       return;
     }
-
-    setSending(true);
-    setSendError(null);
-
-    try {
-      const res = await apiRequest<ChatMessage>('/api/messages/send', {
-        method: 'POST',
-        body: JSON.stringify({
-          recipientId: selectedParticipantId,
-          message: trimmedMsg,
-        }),
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      const res = await apiRequest<TeacherSearchItem[]>(
+        `/api/messages/search-teachers?q=${encodeURIComponent(q)}`,
+      );
+      if (cancelled) return;
+      setSearching(false);
+      if (res.success) setResults(res.data || []);
+      else setError(res.message || "Search failed.");
+    }, 250);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query, isOpen]);
+  useEffect(() => {
+    const id = messages.at(-1)?.id || "";
+    if (id !== lastId.current && nearBottom.current) {
+      requestAnimationFrame(() => {
+        if (scrollRef.current)
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
       });
-
-      setSending(false);
-      if (res.success && res.data) {
-        setInputMessage('');
-        // Append sent message immediately
-        setMessages((prev) => [...prev, res.data!]);
-        scrollToBottom(true);
-        fetchConversations();
-      } else {
-        setSendError(res.message || 'Failed to send message.');
-      }
-    } catch (err: any) {
-      setSending(false);
-      setSendError(err.message || 'Failed to send message.');
     }
-  };
-
-  // Delete single message for everyone
-  const handleDeleteMessage = async (messageId: string) => {
-    setDeletingMessage(true);
-    setSendError(null);
-    try {
-      const res = await apiRequest(`/api/messages/${messageId}`, { method: 'DELETE' });
-      if (res.success) {
-        setMessages((prev) => prev.filter((m) => m.id !== messageId));
-        fetchConversations();
-        setMessageToDelete(null);
-      } else {
-        setSendError(res.message || 'Failed to delete message.');
-      }
-    } catch (err: any) {
-      setSendError(err.message || 'Failed to delete message.');
-    } finally {
-      setDeletingMessage(false);
-    }
-  };
-
-  // Delete entire chat / conversation for everyone
-  const handleDeleteChat = async (targetId: string) => {
-    setDeletingChat(true);
-    setSendError(null);
-    try {
-      const res = await apiRequest(`/api/messages/thread/${targetId}`, { method: 'DELETE' });
-      if (res.success) {
-        if (selectedParticipantId === targetId) {
-          setMessages([]);
-          setSelectedParticipantId(null);
-          setActiveParticipant(null);
-        }
-        fetchConversations();
-        setConfirmDeleteChat(null);
-      } else {
-        setSendError(res.message || 'Failed to delete chat.');
-      }
-    } catch (err: any) {
-      setSendError(err.message || 'Failed to delete chat.');
-    } finally {
-      setDeletingChat(false);
-    }
-  };
-
-  // Helper to format names with (deleted) in bracket
-  const formatParticipantName = (name?: string, isDeleted?: boolean) => {
-    if (!name) return 'User';
-    const stripped = name.replace(/\s*\(deleted\)/gi, '').trim();
-    return isDeleted || name.toLowerCase().includes('(deleted)') ? `${stripped} (deleted)` : stripped;
-  };
-
-  // On open: fetch conversations or initialize target
+    lastId.current = id;
+  }, [messages]);
   useEffect(() => {
-    if (isOpen) {
-      setLoadingConversations(true);
-      fetchConversations().finally(() => setLoadingConversations(false));
-
-      if (initialTargetTeacher) {
-        handleSelectParticipant(initialTargetTeacher.id, initialTargetTeacher);
+    if (!isOpen) return;
+    const before = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (action) setAction(null);
+        else onClose();
       }
-    } else {
-      setSelectedParticipantId(null);
-      setActiveParticipant(null);
+    };
+    window.addEventListener("keydown", handler);
+    return () => {
+      document.body.style.overflow = before;
+      window.removeEventListener("keydown", handler);
+    };
+  }, [isOpen, action, onClose]);
+  async function send() {
+    if (
+      sendLock.current ||
+      !target ||
+      !draft.trim() ||
+      participant?.isDeleted ||
+      !participant
+    )
+      return;
+    const recipient = target,
+      text = draft.trim();
+    mutation.current++;
+    sendLock.current = true;
+    setSending(true);
+    setError("");
+    const res = await apiRequest<ChatMessage>("/api/messages/send", {
+      method: "POST",
+      body: JSON.stringify({ recipientId: recipient, message: text }),
+    });
+    sendLock.current = false;
+    setSending(false);
+    mutation.current++;
+    if (res.success && res.data) {
+      setDrafts((prev) => ({
+        ...prev,
+        [recipient]: prev[recipient]?.trim() === text ? "" : prev[recipient],
+      }));
+      if (selected.current === recipient) {
+        nearBottom.current = true;
+        setMessages((prev) =>
+          prev.some((m) => m.id === res.data!.id) ? prev : [...prev, res.data!],
+        );
+      }
+      void loadConversations();
+    } else
+      setError(
+        res.message || "Message could not be sent. Your draft is still here.",
+      );
+  }
+  async function remove(scope: "me" | "everyone" = "me") {
+    if (!action || !target || deleting) return;
+    mutation.current++;
+    setDeleting(true);
+    const res = await apiRequest(
+      action.type === "chat"
+        ? `/api/messages/thread/${target}`
+        : `/api/messages/${action.message!.id}`,
+      { method: "DELETE", body: JSON.stringify({ scope }) },
+    );
+    mutation.current++;
+    setDeleting(false);
+    if (!res.success) {
+      setError(res.message || "Unable to delete.");
+      return;
+    }
+    if (action.type === "chat") {
+      setTarget(null);
+      selected.current = null;
+      setParticipant(null);
       setMessages([]);
-      setSearchQuery('');
-      setSearchResults([]);
-      setHasSearched(false);
-      setInputMessage('');
-      setSendError(null);
-    }
-  }, [isOpen, initialTargetTeacher]);
-
-  // Polling thread messages every 3.5 seconds while chat is active
-  useEffect(() => {
-    if (!isOpen || !selectedParticipantId) return;
-
-    const pollInterval = setInterval(() => {
-      fetchThread(selectedParticipantId, true);
-    }, 3500);
-
-    return () => clearInterval(pollInterval);
-  }, [isOpen, selectedParticipantId]);
-
-  // Scroll to bottom when messages change
-  useEffect(() => {
-    if (messages.length > 0) {
-      scrollToBottom(false);
-    }
-  }, [messages.length]);
-
+    } else
+      setMessages((prev) =>
+        scope === "everyone"
+          ? prev.map((m) =>
+              m.id === action.message!.id
+                ? { ...m, message: "Message unsent", isUnsent: true }
+                : m,
+            )
+          : prev.filter((m) => m.id !== action.message!.id),
+      );
+    setAction(null);
+    void loadConversations();
+  }
   if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-900/60 backdrop-blur-xs overflow-hidden animate-fadeIn">
-      <div className="bg-white dark:bg-[#1E293B] rounded-2xl shadow-2xl w-full max-w-4xl h-[92vh] max-h-[780px] border border-slate-200/80 dark:border-slate-700 flex flex-col overflow-hidden transition-colors">
-        {/* Top Header */}
-        <div className="px-4 sm:px-6 py-3.5 bg-[#F4F6FA] dark:bg-[#0F172A] border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#2B547E]/10 dark:bg-blue-500/10 text-[#2B547E] dark:text-blue-400 flex items-center justify-center">
-              <MessageSquare className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <span>Direct Messaging</span>
-                <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300">
-                  2-Way
-                </span>
-              </h2>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {isAdmin ? 'Connect with teachers and respond to inquiries' : 'Communicate with Admin and other teachers'}
-              </p>
-            </div>
+  const shown = messages.filter(
+    (m) =>
+      !threadSearch ||
+      m.message.toLowerCase().includes(threadSearch.toLowerCase()),
+  );
+  return createPortal(
+    <div className="record-overlay">
+      <section
+        className="chat-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="chat-title"
+      >
+        <header className="chat-top">
+          <div>
+            <span className="eyebrow">STAY CONNECTED</span>
+            <h2 id="chat-title">
+              <MessageSquare size={20} />
+              Messages
+            </h2>
           </div>
-
           <button
-            type="button"
+            className="icon-button"
             onClick={onClose}
             aria-label="Close messaging"
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-800 transition-colors cursor-pointer"
           >
-            <X className="w-5 h-5" />
+            <X size={21} />
           </button>
-        </div>
-
-        {/* Content Body: Sidebar + Chat Thread */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Left Column: Conversations List & Search (Hidden on small mobile when a chat is open) */}
-          <div
-            className={`w-full md:w-80 lg:w-88 border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-[#1E293B] flex flex-col shrink-0 ${
-              selectedParticipantId ? 'hidden md:flex' : 'flex'
-            }`}
-          >
-            {/* Search Bar for Teachers (Search by username or 10-digit phone number, or admin) */}
-            <div className="p-3 border-b border-slate-100 dark:border-slate-800 space-y-2">
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={handleSearchChange}
-                  onKeyDown={handleSearchKeyDown}
-                  placeholder="write username to chat with other teacher or admin to chat with admin"
-                  className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 transition-colors"
-                />
-                {isSearching && (
-                  <RefreshCw className="w-3.5 h-3.5 text-slate-400 animate-spin absolute right-3 top-3" />
-                )}
-              </div>
-
-              {/* Instant Search Results Dropdown */}
-              {hasSearched && (
-                <div className="bg-slate-50 dark:bg-[#0F172A] rounded-xl border border-slate-200 dark:border-slate-700 p-2 max-h-48 overflow-y-auto space-y-1 shadow-xs animate-fadeIn">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-2 py-0.5">
-                    Search Results
-                  </div>
-                  {searchResults.length === 0 ? (
-                    <div className="text-center py-3 text-xs text-slate-500 dark:text-slate-400">
-                      No results found. Type a username, phone number, or admin.
-                    </div>
-                  ) : (
-                    searchResults.map((teacher) => (
+        </header>
+        {error && (
+          <div className="record-error" role="alert">
+            {error}
+            <button
+              aria-label="Dismiss message error"
+              onClick={() => setError("")}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+        <div className="chat-layout">
+          <aside className={`chat-sidebar ${target ? "chat-hide-mobile" : ""}`}>
+            <label className="search-field">
+              <Search size={16} />
+              <input
+                autoFocus
+                aria-label="Find a person"
+                placeholder="Find a teacher or admin…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+              />
+            </label>
+            <div className="chat-list">
+              {query.trim() ? (
+                <>
+                  {searching ? (
+                    <p className="record-empty">Searching…</p>
+                  ) : results.length ? (
+                    results.map((p) => (
                       <button
-                        key={teacher.id}
-                        type="button"
-                        onClick={() => handleSelectParticipant(teacher.id, teacher)}
-                        className="w-full text-left p-2 rounded-lg hover:bg-white dark:hover:bg-slate-800 transition-colors flex items-center justify-between cursor-pointer border border-transparent hover:border-slate-200 dark:hover:border-slate-700"
+                        className="conversation-row"
+                        key={p.id}
+                        onClick={() => choose(p.id)}
                       >
-                        <div className="min-w-0 pr-2">
-                          <div className="flex items-center gap-1.5">
-                            <p className="text-xs font-semibold text-slate-900 dark:text-slate-100 truncate">
-                              {teacher.fullName || teacher.username}
-                            </p>
-                            {teacher.id === 'admin' && (
-                              <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
-                                Admin
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 text-[10px] text-slate-500 dark:text-slate-400">
-                            <span>@{teacher.username}</span>
-                            {teacher.phoneNumber && (
-                              <span className="flex items-center gap-0.5 font-mono">
-                                <Phone className="w-2.5 h-2.5" />
-                                {teacher.phoneNumber}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                        <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 shrink-0">
-                          Chat →
+                        <span className="chat-avatar">
+                          {(p.fullName || p.username).slice(0, 1).toUpperCase()}
+                        </span>
+                        <span>
+                          <strong>{p.fullName || p.username}</strong>
+                          <small>@{p.username}</small>
                         </span>
                       </button>
                     ))
+                  ) : (
+                    <p className="record-empty">No people found.</p>
                   )}
-                </div>
-              )}
-            </div>
-
-            {/* Conversations List */}
-            <div className="flex-1 overflow-y-auto p-2 space-y-1">
-              <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                <span>Recent Conversations</span>
-                <button
-                  type="button"
-                  onClick={fetchConversations}
-                  title="Refresh conversations"
-                  className="hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                </button>
-              </div>
-
-              {loadingConversations ? (
-                <div className="py-8 text-center text-xs text-slate-400">
-                  Loading chats...
-                </div>
-              ) : conversations.length === 0 ? (
-                <div className="py-8 text-center text-xs text-slate-400 px-4">
-                  No conversations yet. Search above to start a conversation.
-                </div>
+                </>
               ) : (
-                conversations.map((conv) => {
-                  const isConvAdmin =
-                    conv.participantId === 'admin' ||
-                    conv.participantRole === 'administrator' ||
-                    conv.participantRole === 'master_admin';
-                  const isConvDeleted = Boolean(
-                    conv.isDeleted ||
-                    conv.participantFullName?.toLowerCase().includes('(deleted)') ||
-                    conv.participantUsername?.toLowerCase().includes('(deleted)')
-                  );
-                  const isSelected = selectedParticipantId === conv.participantId;
-                  const displayName = isConvAdmin
-                    ? 'Admin'
-                    : formatParticipantName(conv.participantFullName || conv.participantUsername, isConvDeleted);
-
-                  return (
-                    <div
-                      key={conv.conversationId || conv.participantId}
-                      className={`group w-full p-2.5 rounded-xl border transition-all flex items-start gap-2.5 relative ${
-                        isSelected
-                          ? 'bg-blue-50 dark:bg-blue-950/40 border-[#2B547E] dark:border-blue-500'
-                          : 'bg-transparent border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/60'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => handleSelectParticipant(conv.participantId)}
-                        className="flex-1 flex items-start gap-2.5 text-left min-w-0 cursor-pointer"
-                      >
-                        {/* Avatar with slight difference for Admin or Deleted */}
-                        <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-                            isConvAdmin
-                              ? 'bg-slate-200/90 dark:bg-slate-700/90 text-slate-800 dark:text-slate-200'
-                              : isConvDeleted
-                              ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                              : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          <User className="w-4 h-4" />
-                        </div>
-
-                        {/* Info & Last message */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between gap-1 mb-0.5">
-                            {isConvAdmin ? (
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span className="text-xs font-bold text-slate-900 dark:text-slate-100 truncate">
-                                  Admin
-                                </span>
-                                <span className="text-[10px] font-medium px-1.5 py-0.2 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
-                                  Admin
-                                </span>
-                              </div>
-                            ) : (
-                              <div className="flex items-center gap-1 truncate">
-                                <span className={`text-xs font-semibold truncate ${isConvDeleted ? 'text-slate-600 dark:text-slate-300' : 'text-slate-900 dark:text-slate-100'}`}>
-                                  {displayName}
-                                </span>
-                              </div>
-                            )}
-
-                            <span className="text-[10px] text-slate-400 shrink-0">
-                              {new Date(conv.lastMessageAt).toLocaleDateString([], {
-                                month: 'numeric',
-                                day: 'numeric',
-                              })}
-                            </span>
-                          </div>
-
-                          {!isConvAdmin && (
-                            <div className="text-[10px] text-slate-400 truncate mb-0.5">
-                              @{formatParticipantName(conv.participantUsername, isConvDeleted)}
-                            </div>
-                          )}
-
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate font-normal">
-                            {conv.lastMessage}
-                          </p>
-                        </div>
-                      </button>
-
-                      {/* Unread badge & Delete Chat action */}
-                      <div className="flex items-center gap-1 shrink-0 pt-0.5">
-                        {conv.unreadCount > 0 && (
-                          <span className="min-w-[18px] h-[18px] rounded-full bg-rose-600 text-white text-[10px] font-bold flex items-center justify-center px-1 shrink-0">
-                            {conv.unreadCount}
-                          </span>
-                        )}
+                <>
+                  {!conversations.length && (
+                    <div className="record-empty">
+                      <MessageSquare size={30} />
+                      <h3>Start a conversation</h3>
+                      <p>Search for a colleague above.</p>
+                      {!isAdmin && (
                         <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setConfirmDeleteChat(conv.participantId);
-                          }}
-                          title="Delete Chat"
-                          className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-700 rounded-md transition-all cursor-pointer"
+                          className="text-button"
+                          onClick={() => choose("admin")}
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          Message administrator
                         </button>
-                      </div>
+                      )}
                     </div>
-                  );
-                })
+                  )}
+                  {conversations.map((c) => (
+                    <button
+                      className={`conversation-row ${target === c.participantId ? "active" : ""}`}
+                      key={c.participantId}
+                      onClick={() => choose(c.participantId)}
+                    >
+                      <span className="chat-avatar">
+                        {(c.participantFullName || c.participantUsername)
+                          .slice(0, 1)
+                          .toUpperCase()}
+                      </span>
+                      <span className="conversation-text">
+                        <strong>
+                          {c.participantFullName || c.participantUsername}
+                        </strong>
+                        <small>
+                          {c.isDeleted
+                            ? "Account deleted · history preserved"
+                            : c.lastMessage}
+                        </small>
+                      </span>
+                      <span className="conversation-meta">
+                        <small>
+                          {new Date(c.lastMessageAt).toLocaleDateString(
+                            undefined,
+                            { month: "short", day: "numeric" },
+                          )}
+                        </small>
+                        {c.unreadCount > 0 && <b>{c.unreadCount}</b>}
+                      </span>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
-          </div>
-
-          {/* Right Column: Active Thread */}
-          <div
-            className={`flex-1 bg-slate-50/50 dark:bg-[#0F172A] flex flex-col overflow-hidden ${
-              !selectedParticipantId ? 'hidden md:flex' : 'flex'
-            }`}
-          >
-            {selectedParticipantId ? (
+            <div className="chat-sidebar-note">
+              <ShieldCheck size={15} />
+              Your chat deletions affect your inbox only.
+            </div>
+          </aside>
+          <div className={`chat-thread ${!target ? "chat-hide-mobile" : ""}`}>
+            {target ? (
               <>
-                {/* Active Thread Header */}
-                <div className="px-4 py-3 bg-white dark:bg-[#1E293B] border-b border-slate-200 dark:border-slate-700 flex items-center justify-between shrink-0">
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setSelectedParticipantId(null)}
-                      className="md:hidden p-1.5 rounded-lg text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                    </button>
-
-                    <div className="flex items-center gap-2.5">
-                      <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold shrink-0 ${
-                          activeParticipant?.role === 'master_admin' ||
-                          activeParticipant?.role === 'administrator' ||
-                          activeParticipant?.id === 'admin'
-                            ? 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
-                            : activeParticipant?.isDeleted ||
-                              activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
-                              activeParticipant?.username?.toLowerCase().includes('(deleted)')
-                            ? 'bg-rose-100 dark:bg-rose-950/60 text-rose-600 dark:text-rose-400'
-                            : 'bg-blue-100 dark:bg-blue-950 text-[#2B547E] dark:text-blue-400'
-                        }`}
-                      >
-                        <User className="w-5 h-5" />
-                      </div>
-
-                      <div>
-                        {activeParticipant?.role === 'master_admin' ||
-                        activeParticipant?.role === 'administrator' ||
-                        activeParticipant?.id === 'admin' ? (
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              Admin
-                            </span>
-                            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-slate-200/70 dark:bg-slate-700/70 text-slate-700 dark:text-slate-300">
-                              Admin
-                            </span>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-bold text-slate-900 dark:text-slate-100">
-                              {formatParticipantName(
-                                activeParticipant?.fullName || activeParticipant?.username,
-                                activeParticipant?.isDeleted
-                              )}
-                            </span>
-                            <span className="text-xs font-medium text-slate-400">
-                              @{formatParticipantName(activeParticipant?.username, activeParticipant?.isDeleted)}
-                            </span>
-                            {(activeParticipant?.isDeleted ||
-                              activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
-                              activeParticipant?.username?.toLowerCase().includes('(deleted)')) && (
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 dark:bg-rose-950/70 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-900/60">
-                                (deleted)
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                          {activeParticipant?.phoneNumber && (
-                            <span className="flex items-center gap-1 font-mono">
-                              <Phone className="w-3 h-3 text-slate-400" />
-                              {activeParticipant.phoneNumber}
-                            </span>
-                          )}
-                          <span>• Direct 2-Way Channel</span>
-                        </div>
-                      </div>
-                    </div>
+                <div className="chat-peer">
+                  <button
+                    className="icon-button md:hidden"
+                    aria-label="Back to conversations"
+                    onClick={() => {
+                      setTarget(null);
+                      selected.current = null;
+                    }}
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                  <div className="chat-avatar">
+                    {(participant?.fullName || participant?.username || "?")
+                      .slice(0, 1)
+                      .toUpperCase()}
                   </div>
-
-                  {/* Header Actions: Refresh & Delete Chat */}
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
-                      disabled={loadingThread}
-                      title="Refresh messages"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors border border-slate-200 dark:border-slate-700 shadow-2xs cursor-pointer"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${loadingThread ? 'animate-spin' : ''}`} />
-                      <span className="hidden sm:inline">Refresh</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => selectedParticipantId && setConfirmDeleteChat(selectedParticipantId)}
-                      title="Delete entire chat"
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors border border-rose-200 dark:border-rose-900/60 shadow-2xs cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Delete Chat</span>
-                    </button>
+                  <div>
+                    <h3>
+                      {participant?.fullName ||
+                        participant?.username ||
+                        "Loading conversation…"}
+                    </h3>
+                    <small>
+                      {participant?.isDeleted
+                        ? "Account deleted"
+                        : participant?.role === "teacher"
+                          ? "Teacher"
+                          : "Administrator"}
+                    </small>
                   </div>
+                  <button
+                    className="icon-button"
+                    aria-label="Delete entire chat"
+                    onClick={() => setAction({ type: "chat" })}
+                  >
+                    <Trash2 size={17} />
+                  </button>
                 </div>
-
-                {/* Messages Scroll Area */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                  {loadingThread ? (
-                    <div className="py-12 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                      <RefreshCw className="w-4 h-4 animate-spin text-slate-400" />
-                      <span>Loading conversation history...</span>
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <div className="py-16 text-center space-y-2">
-                      <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-[#2B547E] dark:text-blue-400 mx-auto flex items-center justify-center">
-                        <MessageSquare className="w-6 h-6" />
-                      </div>
-                      <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
-                        No messages yet
-                      </p>
-                      <p className="text-[11px] text-slate-400 max-w-xs mx-auto">
-                        Type a message below to start the conversation.
+                <label className="chat-search">
+                  <Search size={14} />
+                  <input
+                    aria-label="Search this conversation"
+                    placeholder="Search this conversation…"
+                    value={threadSearch}
+                    onChange={(e) => setThreadSearch(e.target.value)}
+                  />
+                </label>
+                <div
+                  className="chat-messages"
+                  ref={scrollRef}
+                  onScroll={() => {
+                    const el = scrollRef.current;
+                    if (el)
+                      nearBottom.current =
+                        el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+                  }}
+                >
+                  {loading ? (
+                    <p className="record-empty">Loading messages…</p>
+                  ) : !shown.length ? (
+                    <div className="record-empty">
+                      <MessageSquare size={32} />
+                      <p>
+                        {threadSearch
+                          ? "No matching messages."
+                          : "This is the beginning of your conversation."}
                       </p>
                     </div>
                   ) : (
-                    messages.map((msg) => {
-                      const isFromAdmin =
-                        msg.senderRole === 'administrator' ||
-                        msg.senderRole === 'master_admin' ||
-                        msg.senderId === 'admin';
-
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`group relative flex flex-col ${
-                            msg.isMine ? 'items-end' : 'items-start'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1.5 max-w-full">
-                            {/* Delete Message Button for Sender or Admin */}
-                            {msg.isMine && (
-                              <button
-                                type="button"
-                                onClick={() => setMessageToDelete(msg.id)}
-                                title="Delete for everyone"
-                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer shrink-0"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-
-                            <div
-                              className={`max-w-[85%] sm:max-w-md px-3.5 py-2.5 rounded-2xl text-xs break-words shadow-2xs relative ${
-                                msg.isMine
-                                  ? 'bg-[#2B547E] text-white rounded-br-xs'
-                                  : 'bg-white dark:bg-[#1E293B] text-slate-900 dark:text-slate-100 border border-slate-200 dark:border-slate-700 rounded-bl-xs'
-                              }`}
-                            >
-                              {/* Sender title if not mine */}
-                              {!msg.isMine && (
-                                <div className="mb-1 text-[10px] font-semibold">
-                                  {isFromAdmin ? (
-                                    <span className="text-slate-800 dark:text-slate-200 flex items-center gap-1 font-bold">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
-                                      <span>Admin</span>
-                                    </span>
-                                  ) : (
-                                    <span className="text-slate-600 dark:text-slate-300">
-                                      {msg.senderFullName || `@${msg.senderUsername}`}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
-
-                              <p className="whitespace-pre-wrap leading-relaxed">{msg.message}</p>
-
-                              <div
-                                className={`mt-1.5 flex items-center justify-end gap-1 text-[9px] ${
-                                  msg.isMine
-                                    ? 'text-blue-100/70'
-                                    : 'text-slate-400'
-                                }`}
-                              >
-                                <Clock className="w-2.5 h-2.5" />
-                                <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                {msg.isMine && msg.read && (
-                                  <CheckCircle2 className="w-2.5 h-2.5 text-blue-200" />
-                                )}
-                              </div>
-                            </div>
-
-                            {/* Delete Message Button for Non-sender (recipient or admin) */}
-                            {!msg.isMine && (
-                              <button
-                                type="button"
-                                onClick={() => setMessageToDelete(msg.id)}
-                                title="Delete for everyone"
-                                className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-slate-200/60 dark:hover:bg-slate-800 rounded-lg transition-all cursor-pointer shrink-0"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
+                    shown.map((m, i) => (
+                      <React.Fragment key={m.id}>
+                        {(i === 0 ||
+                          new Date(shown[i - 1].createdAt).toDateString() !==
+                            new Date(m.createdAt).toDateString()) && (
+                          <div className="chat-date">
+                            {new Date(m.createdAt).toLocaleDateString(
+                              undefined,
+                              {
+                                weekday: "short",
+                                day: "numeric",
+                                month: "long",
+                              },
                             )}
                           </div>
+                        )}
+                        <div
+                          className={`chat-message ${m.isMine ? "mine" : ""}`}
+                        >
+                          <div
+                            className={`chat-bubble ${m.isUnsent ? "unsent" : ""}`}
+                          >
+                            <p>{m.isUnsent ? "Message unsent" : m.message}</p>
+                            <small>
+                              {new Date(m.createdAt).toLocaleTimeString(
+                                undefined,
+                                { hour: "2-digit", minute: "2-digit" },
+                              )}
+                              {m.isMine && !m.isUnsent && (
+                                <span title={m.read ? "Seen" : "Sent"}>
+                                  {m.read ? (
+                                    <CheckCheck size={13} />
+                                  ) : (
+                                    <Check size={13} />
+                                  )}
+                                </span>
+                              )}
+                            </small>
+                          </div>
+                          <button
+                            className="chat-message-action"
+                            aria-label={`Message options: ${m.message.slice(0, 30)}`}
+                            onClick={() =>
+                              setAction({ type: "message", message: m })
+                            }
+                          >
+                            <Trash2 size={14} />
+                          </button>
                         </div>
-                      );
-                    })
+                      </React.Fragment>
+                    ))
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
-
-                {/* Send Error Notice (if limit reached or error) */}
-                {sendError && (
-                  <div className="px-4 py-2 bg-rose-50 dark:bg-rose-950/50 border-t border-rose-200 dark:border-rose-900/60 text-rose-700 dark:text-rose-300 text-xs flex items-center gap-2 shrink-0">
-                    <AlertCircle className="w-4 h-4 shrink-0" />
-                    <span className="font-medium">{sendError}</span>
-                  </div>
-                )}
-
-                {/* Message Input Box OR Deleted Account Notification */}
-                {activeParticipant?.isDeleted ||
-                activeParticipant?.fullName?.toLowerCase().includes('(deleted)') ||
-                activeParticipant?.username?.toLowerCase().includes('(deleted)') ? (
-                  <div className="p-4 bg-rose-50/80 dark:bg-rose-950/40 border-t border-rose-200 dark:border-rose-900/60 text-xs text-rose-700 dark:text-rose-300 flex items-center justify-between gap-2 shrink-0">
-                    <div className="flex items-center gap-2">
-                      <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-                      <span>
-                        This account has been deleted. You can view previous messages, but cannot send new messages to this account.
-                      </span>
+                {participant?.isDeleted ? (
+                  <div className="deleted-conversation">
+                    <ShieldCheck size={18} />
+                    <div>
+                      <strong>This account has been deleted.</strong>
+                      <p>
+                        You can read this conversation, but you can’t reply
+                        because the other account no longer exists.
+                      </p>
                     </div>
                   </div>
                 ) : (
                   <form
-                    onSubmit={handleSendMessage}
-                    className="p-3 bg-white dark:bg-[#1E293B] border-t border-slate-200 dark:border-slate-700 shrink-0"
+                    className="chat-compose"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void send();
+                    }}
                   >
-                    <div className="flex items-end gap-2">
-                      <div className="flex-1 relative">
-                        <textarea
-                          rows={2}
-                          maxLength={300}
-                          value={inputMessage}
-                          onChange={(e) => {
-                            setInputMessage(e.target.value);
-                            setSendError(null);
-                          }}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                              e.preventDefault();
-                              handleSendMessage();
-                            }
-                          }}
-                          placeholder="Type a message (Enter to send, max 300 chars)..."
-                          className="w-full p-2.5 text-xs rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-[#0F172A] text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[#2B547E] dark:focus:ring-blue-500 resize-none"
-                        />
-
-                        {/* Character limit counter: max 300 characters */}
-                        <div className="absolute right-2.5 bottom-2 text-[10px] text-slate-400 pointer-events-none">
-                          <span
-                            className={
-                              inputMessage.length >= 290
-                                ? 'text-rose-500 font-bold'
-                                : 'text-slate-400'
-                            }
-                          >
-                            {inputMessage.length}
-                          </span>
-                          /300
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => selectedParticipantId && fetchThread(selectedParticipantId)}
-                        disabled={loadingThread}
-                        title="Refresh messages"
-                        className="p-3 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer shrink-0"
-                      >
-                        <RefreshCw className={`w-4 h-4 ${loadingThread ? 'animate-spin' : ''}`} />
-                      </button>
-
-                      <button
-                        type="submit"
-                        disabled={!inputMessage.trim() || sending}
-                        className="p-3 rounded-xl bg-[#2B547E] hover:bg-[#355C7D] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-xs cursor-pointer shrink-0"
-                        title="Send message"
-                      >
-                        {sending ? (
-                          <RefreshCw className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Send className="w-4 h-4" />
-                        )}
-                      </button>
-                    </div>
+                    <textarea
+                      rows={2}
+                      aria-label="Message"
+                      maxLength={300}
+                      placeholder="Write a message…"
+                      value={draft}
+                      disabled={!participant || loading}
+                      onChange={(e) =>
+                        setDrafts((prev) => ({
+                          ...prev,
+                          [target]: e.target.value,
+                        }))
+                      }
+                      onKeyDown={(e) => {
+                        if (
+                          e.key === "Enter" &&
+                          !e.shiftKey &&
+                          !e.nativeEvent.isComposing
+                        ) {
+                          e.preventDefault();
+                          void send();
+                        }
+                      }}
+                    />
+                    <button
+                      className="record-primary"
+                      aria-label="Send message"
+                      disabled={
+                        sending || !draft.trim() || !participant || loading
+                      }
+                    >
+                      <Send size={18} />
+                    </button>
+                    <small>
+                      Enter to send · Shift + Enter for a new line
+                      <span>{draft.length}/300</span>
+                    </small>
                   </form>
                 )}
               </>
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center p-8 text-center space-y-3">
-                <div className="w-14 h-14 rounded-2xl bg-blue-50 dark:bg-blue-950/40 text-[#2B547E] dark:text-blue-400 flex items-center justify-center">
-                  <MessageSquare className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                    Select a Conversation
-                  </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-sm mt-1">
-                    Choose an existing conversation from the list or search for a teacher by username or 10-digit phone number, or search admin to chat with Admin.
-                  </p>
-                </div>
-                {!isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => handleSelectParticipant('admin')}
-                    className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span>Chat with Admin</span>
-                  </button>
-                )}
+              <div className="chat-welcome">
+                <MessageSquare size={45} />
+                <h3>
+                  A little conversation.
+                  <br />A better school day.
+                </h3>
+                <p>Choose a conversation or find a colleague.</p>
               </div>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Confirmation Modal: Delete Message for Everyone */}
-      {messageToDelete && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
+        {action && (
+          <div className="chat-confirm-overlay">
+            <div
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="delete-title"
+              className="chat-confirm"
+            >
+              <Trash2 size={23} />
+              <h3 id="delete-title">
+                {action.type === "chat"
+                  ? "Delete this chat?"
+                  : "Remove this message?"}
+              </h3>
+              <p>
+                {action.type === "chat"
+                  ? "This removes the existing conversation from your inbox. Other participants keep their copy. New messages can reopen the chat."
+                  : "Delete for me hides it only from your view. You can also unsend a message you sent; everyone will see “Message unsent”."}
+              </p>
               <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Message?</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Delete for everyone</p>
+                <button
+                  className="record-secondary"
+                  disabled={deleting}
+                  onClick={() => setAction(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="record-secondary"
+                  disabled={deleting}
+                  onClick={() => remove("me")}
+                >
+                  Delete for me
+                </button>
+                {action.type === "message" &&
+                  !action.message?.isUnsent &&
+                  (action.message?.senderId === currentUser.id ||
+                    (isAdmin && action.message?.senderId === "admin")) && (
+                    <button
+                      className="record-danger"
+                      disabled={deleting}
+                      onClick={() => remove("everyone")}
+                    >
+                      Unsend for everyone
+                    </button>
+                  )}
               </div>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Are you sure you want to delete this message for everyone? This message will be permanently removed for all participants.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={deletingMessage}
-                onClick={() => setMessageToDelete(null)}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingMessage}
-                onClick={() => messageToDelete && handleDeleteMessage(messageToDelete)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                {deletingMessage && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Delete for Everyone</span>
-              </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Confirmation Modal: Delete Entire Chat */}
-      {confirmDeleteChat && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-fadeIn">
-          <div className="bg-white dark:bg-[#1E293B] rounded-2xl p-5 max-w-sm w-full border border-slate-200 dark:border-slate-700 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-rose-600 dark:text-rose-400">
-              <div className="w-10 h-10 rounded-xl bg-rose-100 dark:bg-rose-950/60 flex items-center justify-center shrink-0">
-                <Trash2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100">Delete Entire Chat?</h4>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Clear all messages</p>
-              </div>
-            </div>
-            <p className="text-xs text-slate-600 dark:text-slate-300">
-              Are you sure you want to delete this entire chat? All messages in this conversation will be permanently removed for everyone.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <button
-                type="button"
-                disabled={deletingChat}
-                onClick={() => setConfirmDeleteChat(null)}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={deletingChat}
-                onClick={() => confirmDeleteChat && handleDeleteChat(confirmDeleteChat)}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-rose-600 hover:bg-rose-700 text-white transition-colors cursor-pointer flex items-center gap-1.5 shadow-xs"
-              >
-                {deletingChat && <RefreshCw className="w-3.5 h-3.5 animate-spin" />}
-                <span>Delete Chat</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        )}
+      </section>
+    </div>,
+    document.body,
   );
-};
+}

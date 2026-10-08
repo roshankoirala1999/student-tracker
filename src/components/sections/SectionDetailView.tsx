@@ -1,3 +1,4 @@
+import { ReportModal } from '../reports/ReportModal.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   UserPlus,
@@ -38,6 +39,7 @@ export const SectionDetailView: React.FC<Props> = ({
   onBackToClass,
   onRefreshSectionCount,
 }) => {
+  const [reportsOpen, setReportsOpen] = useState(false);
   const { user } = useAuth();
   const isExpired = !!user?.isExpired || !!user?.isReadOnly;
 
@@ -84,31 +86,7 @@ export const SectionDetailView: React.FC<Props> = ({
     loadStudents();
   }, [section.id, search, currentClass.id]);
 
-  const handleDownloadAttendance = async () => {
-    try {
-      const url = isCombined
-        ? `/api/classes/${currentClass.id}/attendance/download-csv`
-        : `/api/sections/${section.id}/attendance/download-csv`;
-      const res = await fetch(url, { credentials: 'include' });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        alert(json?.message || 'Failed to download attendance CSV.');
-        return;
-      }
-      const blob = await res.blob();
-      const blobUrl = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = blobUrl;
-      const secLabel = isCombined ? 'Combined' : section.name;
-      a.download = `${currentClass.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_${secLabel.replace(/[^a-zA-Z0-9_-]/g, '_')}_Attendance.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(blobUrl);
-    } catch {
-      alert('Failed to download attendance CSV.');
-    }
-  };
+  const handleDownloadAttendance = () => setReportsOpen(true);
 
   const handleSaveStudent = async (data: {
     rollNumber: number;
@@ -199,6 +177,7 @@ export const SectionDetailView: React.FC<Props> = ({
 
   return (
     <div className="detail-workspace space-y-6 animate-fade-in">
+      {reportsOpen && <ReportModal classId={currentClass.id} className={currentClass.name} sectionId={isCombined ? '' : section.id} onClose={() => setReportsOpen(false)} />}
       {loadError && <div role="alert" className="p-3 text-sm rounded-xl bg-rose-50 text-rose-700">{loadError} <button className="underline" onClick={loadStudents}>Retry</button></div>}
       {/* Top Breadcrumb and Header with solid section border */}
       <div
@@ -247,10 +226,10 @@ export const SectionDetailView: React.FC<Props> = ({
             type="button"
             onClick={handleDownloadAttendance}
             className="flex items-center gap-1.5 px-3.5 py-2.5 min-h-[42px] bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-700 dark:text-blue-300 rounded-xl text-xs font-semibold cursor-pointer transition-all hover:-translate-y-0.5"
-            title="Download Attendance CSV"
+            title="Download attendance and marks as PDF or CSV"
           >
             <Download className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>Attendance Download</span>
+            <span>Reports · PDF / CSV</span>
           </button>
 
           {/* Add Student (for regular sections) */}
@@ -492,6 +471,7 @@ export const SectionDetailView: React.FC<Props> = ({
       />
 
       <MarksTableModal
+        classId={currentClass.id}
         isOpen={marksTableOpen}
         sectionId={section.id}
         sectionName={section.name}
@@ -500,6 +480,7 @@ export const SectionDetailView: React.FC<Props> = ({
       />
 
       <AttendanceModal
+        onOpenReports={() => { setAttendanceOpen(false); setReportsOpen(true); }}
         isOpen={attendanceOpen}
         sectionId={section.id}
         sectionName={section.name}

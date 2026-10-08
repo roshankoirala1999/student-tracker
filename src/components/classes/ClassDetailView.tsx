@@ -1,3 +1,4 @@
+import { ReportModal } from '../reports/ReportModal.tsx';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Plus,
@@ -37,6 +38,7 @@ export const ClassDetailView: React.FC<Props> = ({
   onClassDeleted,
   onBack,
 }) => {
+  const [reportsOpen, setReportsOpen] = useState(false);
   const { user } = useAuth();
   const isExpired = !!user?.isExpired || !!user?.isReadOnly;
   const [attendanceLoading, setAttendanceLoading] = useState(false);
@@ -113,31 +115,8 @@ export const ClassDetailView: React.FC<Props> = ({
   };
 
   // Download Attendance CSV for the entire class
-  const handleDownloadAttendance = async () => {
-    try {
-      const res = await fetch(`/api/classes/${currentClass.id}/attendance/download-csv`, {
-        credentials: 'include',
-      });
-      if (!res.ok) {
-        const json = await res.json().catch(() => null);
-        alert(json?.message || 'Failed to download attendance CSV.');
-        return;
-      }
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${currentClass.name.replace(/[^a-zA-Z0-9_-]/g, '_')}_Attendance.csv`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
-    } catch {
-      alert('Failed to download attendance CSV.');
-    }
-  };
+  const handleDownloadAttendance = () => setReportsOpen(true);
 
-  // Add Section (requires teacher's password)
   const handleConfirmAddSection = async (password: string) => {
     if (sections.length >= 20) {
       alert('Max number of sections limit reached (20 per class)');
@@ -239,6 +218,8 @@ export const ClassDetailView: React.FC<Props> = ({
 
   return (
     <div className="detail-workspace space-y-6 animate-fade-in">
+      {reportsOpen && <ReportModal classId={currentClass.id} className={currentClass.name} onClose={() => setReportsOpen(false)} />}
+      <button className="record-secondary" onClick={() => setReportsOpen(true)}><Download size={16}/>Attendance & marks reports · PDF / CSV</button>
       {/* Top Class Banner & Actions with solid class border */}
       <div className="bg-white/80 dark:bg-[#1A2232]/90 backdrop-blur-md rounded-2xl border-2 border-[#2B547E] dark:border-blue-500/80 p-5 sm:p-6 shadow-sm transition-colors space-y-5">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -493,7 +474,7 @@ export const ClassDetailView: React.FC<Props> = ({
                     type="button"
                     onClick={handleDownloadAttendance}
                     className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
-                    title="Download Attendance CSV for all students in class"
+                    title="Download attendance or marks as PDF or CSV"
                   >
                     <Download className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
                     <span>Attendance</span>

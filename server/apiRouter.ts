@@ -1,3 +1,4 @@
+import * as reportCtrl from './controllers/reportController.ts';
 import { ownResource } from "./resourceAccess.ts";
 import { Router } from "express";
 import { checkJwtConfig } from "./auth.ts";
@@ -163,6 +164,10 @@ api.patch(
   classCtrl.toggleAttendance,
 );
 
+// Report data is scoped by the same class ownership checks as classroom actions.
+api.get('/classes/:classId/reports/:kind', verifyClassOwnership, reportCtrl.getRecordReport);
+api.post('/classes/:classId/reports/:kind/csv', requireTeacher, verifyClassOwnership, reportCtrl.importRecordCsv);
+
 // 4. Sections
 api.get(
   "/classes/:classId/sections",
@@ -263,7 +268,7 @@ api.post(
 api.post(
   "/students/bulk-import-excel",
   requireTeacher,
-  marksCtrl.importStudentRosterExcel,
+  (_req, res) => res.status(415).json({success:false,message:"Uploads support CSV only. Use the CSV roster template."}),
 );
 api.get(
   "/sections/:sectionId/students/csv-template",
@@ -285,7 +290,7 @@ api.post(
   "/sections/:sectionId/students/excel/import",
   requireTeacher,
   verifySectionOwnership,
-  marksCtrl.importStudentRosterExcel,
+  (_req, res) => res.status(415).json({success:false,message:"Uploads support CSV only. Use the CSV roster template."}),
 );
 
 // 7. Marks CSV & Dynamic Grid
@@ -323,7 +328,7 @@ api.post(
   "/sections/:sectionId/excel/import",
   requireTeacher,
   verifySectionOwnership,
-  marksCtrl.importMarksExcel,
+  (_req, res) => res.status(415).json({success:false,message:"Uploads support CSV only. Use the CSV report template."}),
 );
 
 // 8. Attendance
@@ -530,7 +535,7 @@ api.delete(
 
 // 2-Way Messaging System
 api.get("/messages/inbox", requireAuth, messageCtrl.getInbox);
-api.post("/messages/broadcast", requireAuth, messageCtrl.broadcastMessage);
+api.post("/messages/broadcast", requireMasterAdmin, messageCtrl.broadcastMessage);
 api.patch("/messages/mark-read/:id", requireAuth, messageCtrl.markSingleRead);
 api.get("/messages/conversations", requireAuth, messageCtrl.getConversations);
 api.get("/messages/search-teachers", requireAuth, messageCtrl.searchTeachers);
